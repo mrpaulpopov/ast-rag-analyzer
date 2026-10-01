@@ -6,7 +6,7 @@ import psycopg2
 from ollama import AsyncClient
 from dotenv import load_dotenv
 
-from src.paths import RAG_DATABASE, ALL_RAW_FUNCTIONS
+from src.paths import FUNCTIONS_RAG_PATH, RAW_FUNCTIONS_PATH
 
 load_dotenv()
 
@@ -23,9 +23,9 @@ OLLAMA_HOST = os.getenv('OLLAMA_HOST')
 
 async def process_and_save():
     try:
-        with open(RAG_DATABASE, "r", encoding="utf-8") as f:
+        with open(FUNCTIONS_RAG_PATH, "r", encoding="utf-8") as f:
             rag_data = json.load(f)
-        with open(ALL_RAW_FUNCTIONS, "r", encoding="utf-8") as f:
+        with open(RAW_FUNCTIONS_PATH, "r", encoding="utf-8") as f:
             raw_functions = json.load(f)
     except FileNotFoundError as e:
          print(f"Ошибка загрузки файлов: {e}")

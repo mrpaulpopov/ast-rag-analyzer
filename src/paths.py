@@ -7,10 +7,10 @@ CONFIG_PATH = PROJECT_ROOT / "config.yaml"
 CACHE_DIR = PROJECT_ROOT / "artifacts"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-AST_PATH = PROJECT_ROOT/ "artifacts/ast_functions.json"
-ALL_RAW_FUNCTIONS = PROJECT_ROOT / "artifacts/raw_functions.json"
-ALL_PROC_FUNCTIONS = PROJECT_ROOT / "artifacts/proc_functions.json"
-RAG_DATABASE = PROJECT_ROOT / "artifacts/ready_for_rag.json"
+AST_FUNCTIONS_PATH = CACHE_DIR / "functions_ast.json"
+RAW_FUNCTIONS_PATH = CACHE_DIR / "functions_raw.json"
+DESCRIBED_FUNCTIONS_PATH = CACHE_DIR / "functions_described.json"
+FUNCTIONS_RAG_PATH = CACHE_DIR / "functions_rag.json"
 
 
 if __name__ == "__main__":

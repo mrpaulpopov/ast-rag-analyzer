@@ -6,9 +6,9 @@ import sys
 
 import yaml
 
-from src.ast_parser import extract_ast_project_data
+from src.ast_parser import extract_project_ast_code_structure
 from src.ollama_utils import OllamaGenerator, create_docstrings
-from src.paths import ALL_PROC_FUNCTIONS, RAG_DATABASE, AST_PATH, ALL_RAW_FUNCTIONS, CONFIG_PATH
+from src.paths import DESCRIBED_FUNCTIONS_PATH, FUNCTIONS_RAG_PATH, AST_FUNCTIONS_PATH, RAW_FUNCTIONS_PATH, CONFIG_PATH
 
 import asyncio
 import json
@@ -50,7 +50,7 @@ def merge_ast_and_docs(ast_data: dict, ollama_data: dict) -> dict:
             if func_fullname in ast_data[file_path]["functions"]:
                 ast_data[file_path]["functions"][func_fullname] = docstring
 
-        with open(RAG_DATABASE, "w", encoding="utf-8") as f:
+        with open(FUNCTIONS_RAG_PATH, "w", encoding="utf-8") as f:
             json.dump(ast_data, f, indent=4, ensure_ascii=False)
 
     return ast_data
@@ -62,24 +62,24 @@ def main():
     TARGET_DIR = config.get("TARGET_DIR")
     IGNORED_DIRS = set(config.get("IGNORED_DIRS") or [])
 
-    ast_dict, raw_functions = extract_ast_project_data(TARGET_DIR, IGNORED_DIRS)
+    ast_dict, raw_functions = extract_project_ast_code_structure(TARGET_DIR, IGNORED_DIRS)
 
     json_str = json.dumps(ast_dict, indent=4)
-    with open(AST_PATH, "w") as f:
+    with open(AST_FUNCTIONS_PATH, "w") as f:
         f.write(json_str)
 
     json_str = json.dumps(raw_functions, indent=4)
-    with open(ALL_RAW_FUNCTIONS, "w") as f:
+    with open(RAW_FUNCTIONS_PATH, "w") as f:
         f.write(json_str)
 
     # ollama_dict = asyncio.run(create_docstrings(raw_functions))
 
     # DEBUG
-    # with open(AST_PATH, "r", encoding="utf-8") as f:
+    # with open(AST_FUNCTIONS_PATH, "r", encoding="utf-8") as f:
     #     file_content = f.read()
     #     ast_dict = ast.literal_eval(file_content)
     #
-    # with open(ALL_PROC_FUNCTIONS, "r", encoding="utf-8") as f:
+    # with open(DESCRIBED_FUNCTIONS_PATH, "r", encoding="utf-8") as f:
     #     file_content = f.read()
     #     ollama_dict = ast.literal_eval(file_content)
 

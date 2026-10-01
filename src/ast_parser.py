@@ -82,7 +82,7 @@ def iter_python_files(target_dir: str, ignored_dirs: set[str] | None = None) -> 
                 yield os.path.join(root, file)
 
 
-def extract_ast_code_data(source: str, file_path: str, project_root: str):
+def extract_ast_code_structure(source: str, file_path: str, project_root: str):
     tree = ast.parse(source)
     extractor = CodeExtractor(
         project_root=project_root,
@@ -93,7 +93,7 @@ def extract_ast_code_data(source: str, file_path: str, project_root: str):
     return extractor.data, extractor.raw_functions
 
 
-def extract_ast_project_data(target_dir: str, ignored_dirs: set[str] | None = None) -> tuple[dict, dict]:
+def extract_project_ast_code_structure(target_dir: str, ignored_dirs: set[str] | None = None) -> tuple[dict, dict]:
     ast_dict = {}
     raw_functions = {}
 
@@ -102,7 +102,7 @@ def extract_ast_project_data(target_dir: str, ignored_dirs: set[str] | None = No
             source = f.read()
 
         try:
-            ast_data, raw = extract_ast_code_data(source, file_path, target_dir)
+            ast_data, raw = extract_ast_code_structure(source, file_path, target_dir)
         except SyntaxError as e:
             logger.warning(f'Error in {file_path}: {e}')
             continue
