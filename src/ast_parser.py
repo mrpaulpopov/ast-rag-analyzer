@@ -3,17 +3,13 @@ import json
 import os
 import logging
 import sys
-from src.paths import AST_PATH, ALL_RAW_FUNCTIONS
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(message)s",
-    stream=sys.stdout
-)
+from src.paths import AST_PATH, ALL_RAW_FUNCTIONS, IGNORED_DIRS
+from collections.abc import Iterator
 
 logger = logging.getLogger(__name__)
 
 raw_functions = {}
+
 
 class CodeExtractor(ast.NodeVisitor):
     def __init__(self, project_root, file_content, file_path):
@@ -26,7 +22,6 @@ class CodeExtractor(ast.NodeVisitor):
         self.file_path = file_path
         self.project_root = project_root
         self.current_class = None
-
 
     def visit_Import(self, node):
         for alias in node.names:
@@ -64,7 +59,6 @@ class CodeExtractor(ast.NodeVisitor):
             self.data["functions"].append(node.name)
             func_fullname = node.name
 
-
         raw_code = ast.get_source_segment(self.file_content, node)
 
         unique_key = f'{self.file_path}::{func_fullname}'
@@ -76,40 +70,37 @@ class CodeExtractor(ast.NodeVisitor):
 
 
 
-def ast_parsing(target_dir):
-    final_data = {}
-
+def iter_python_files(target_dir: str) -> Iterator[str]:
     for root, dirs, files in os.walk(target_dir):
-        dirs[:] = [d for d in dirs if d not in ['.venv', '__pycache__']]
+        dirs[:] = [d for d in dirs if d not in IGNORED_DIRS]
 
         for file in files:
             if file.endswith('.py') and not file.startswith('_'):
-                full_path = os.path.join(root, file)
-                with open(full_path, "r", encoding="utf-8") as f:
-                    file_content = f.read()
-                    try:
-                        tree = ast.parse(file_content)
-                        visitor = CodeExtractor(project_root=target_dir, file_content=file_content, file_path=full_path)
-                        visitor.visit(tree)
+                yield os.path.join(root, file)
 
-                        final_data.update({full_path: visitor.data})
-                    except SyntaxError as e:
-                        print(f'Error in {full_path}: {e}')
 
-    json_str = json.dumps(final_data, indent=4)
-    with open(AST_PATH, "w") as f:
-        f.write(json_str)
+def extract_ast_code_data(source: str, file_path: str, project_root: str):
+    tree = ast.parse(source)
+    extractor = CodeExtractor(
+        project_root=project_root,
+        file_content=source,
+        file_path=file_path,
+    )
+    extractor.visit(tree)
+    return extractor.data
 
-    with open(ALL_RAW_FUNCTIONS, "a") as f:
-        f.write(raw_functions)
+
+def extract_ast_project_data(target_dir: str) -> dict:
+    ast_dict = {}
+
+    for file_path in iter_python_files(target_dir):
+        with open(file_path, "r", encoding="utf-8") as f:
+            source = f.read()
+
+        try:
+            ast_dict[file_path] = extract_ast_code_data(source, file_path, target_dir)
+        except SyntaxError as e:
+            print(f'Error in {file_path}: {e}')
 
     logger.info("AST Parsing Complete")
-    logger.info("Starting Ollama...")
-
-if __name__ == '__main__':
-    ast_parsing('/Users/paul/PycharmProjects/online-payment-fraud-detection')
-
-
-
-
-
+    return ast_dict
