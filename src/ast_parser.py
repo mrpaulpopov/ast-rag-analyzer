@@ -1,12 +1,16 @@
 import ast
-import json
 import os
 import logging
-import sys
-from src.paths import AST_PATH, ALL_RAW_FUNCTIONS, IGNORED_DIRS
+
+import yaml
+
+from src.paths import CONFIG_PATH
 from collections.abc import Iterator
 
 logger = logging.getLogger(__name__)
+
+
+
 
 
 class CodeExtractor(ast.NodeVisitor):
@@ -68,10 +72,10 @@ class CodeExtractor(ast.NodeVisitor):
         self.visit_FunctionDef(node)
 
 
-
-def iter_python_files(target_dir: str) -> Iterator[str]:
+def iter_python_files(target_dir: str, ignored_dirs: set[str] | None = None) -> Iterator[str]:
+    ignored = ignored_dirs or set() # protection of None
     for root, dirs, files in os.walk(target_dir):
-        dirs[:] = [d for d in dirs if d not in IGNORED_DIRS]
+        dirs[:] = [d for d in dirs if d not in ignored]
 
         for file in files:
             if file.endswith('.py') and not file.startswith('_'):
@@ -89,11 +93,11 @@ def extract_ast_code_data(source: str, file_path: str, project_root: str):
     return extractor.data, extractor.raw_functions
 
 
-def extract_ast_project_data(target_dir: str) -> tuple[dict, dict]:
+def extract_ast_project_data(target_dir: str, ignored_dirs: set[str] | None = None) -> tuple[dict, dict]:
     ast_dict = {}
     raw_functions = {}
 
-    for file_path in iter_python_files(target_dir):
+    for file_path in iter_python_files(target_dir, ignored_dirs):
         with open(file_path, "r", encoding="utf-8") as f:
             source = f.read()
 
@@ -105,5 +109,5 @@ def extract_ast_project_data(target_dir: str) -> tuple[dict, dict]:
 
         ast_dict[file_path] = ast_data
         raw_functions.update(raw)
-    logger.info("AST Parsing Complete")
+    logger.info("AST Project Parsing Complete")
     return ast_dict, raw_functions

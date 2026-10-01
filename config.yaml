@@ -1,0 +1,5 @@
+TARGET_DIR: "/Users/paul/PycharmProjects/online-payment-fraud-detection"
+ANALYSIS_MODEL: "qwen2.5-coder:14b"
+IGNORED_DIRS:
+  - .venv
+  - __pycache__

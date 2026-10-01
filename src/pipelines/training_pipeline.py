@@ -4,9 +4,11 @@ import json
 import logging
 import sys
 
+import yaml
+
 from src.ast_parser import extract_ast_project_data
 from src.ollama_utils import OllamaGenerator, create_docstrings
-from src.paths import ALL_PROC_FUNCTIONS, RAG_DATABASE, AST_PATH, ALL_RAW_FUNCTIONS
+from src.paths import ALL_PROC_FUNCTIONS, RAG_DATABASE, AST_PATH, ALL_RAW_FUNCTIONS, CONFIG_PATH
 
 import asyncio
 import json
@@ -54,8 +56,13 @@ def merge_ast_and_docs(ast_data: dict, ollama_data: dict) -> dict:
     return ast_data
 
 
-def main(target_dir):
-    ast_dict, raw_functions = extract_ast_project_data(target_dir)
+def main():
+    # Loading config
+    config = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
+    TARGET_DIR = config.get("TARGET_DIR")
+    IGNORED_DIRS = set(config.get("IGNORED_DIRS") or [])
+
+    ast_dict, raw_functions = extract_ast_project_data(TARGET_DIR, IGNORED_DIRS)
 
     json_str = json.dumps(ast_dict, indent=4)
     with open(AST_PATH, "w") as f:
@@ -80,4 +87,4 @@ def main(target_dir):
 
 
 if __name__ == "__main__":
-    main(target_dir='/Users/paul/PycharmProjects/online-payment-fraud-detection')
+    main()
