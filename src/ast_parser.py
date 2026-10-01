@@ -8,8 +8,6 @@ from collections.abc import Iterator
 
 logger = logging.getLogger(__name__)
 
-raw_functions = {}
-
 
 class CodeExtractor(ast.NodeVisitor):
     def __init__(self, project_root, file_content, file_path):
@@ -18,6 +16,7 @@ class CodeExtractor(ast.NodeVisitor):
             "classes": {},
             "functions": []
         }
+        self.raw_functions = {}
         self.file_content = file_content
         self.file_path = file_path
         self.project_root = project_root
@@ -62,7 +61,7 @@ class CodeExtractor(ast.NodeVisitor):
         raw_code = ast.get_source_segment(self.file_content, node)
 
         unique_key = f'{self.file_path}::{func_fullname}'
-        raw_functions[unique_key] = raw_code
+        self.raw_functions[unique_key] = raw_code
         self.generic_visit(node)
 
     def visit_AsyncFunctionDef(self, node):
@@ -87,20 +86,24 @@ def extract_ast_code_data(source: str, file_path: str, project_root: str):
         file_path=file_path,
     )
     extractor.visit(tree)
-    return extractor.data
+    return extractor.data, extractor.raw_functions
 
 
-def extract_ast_project_data(target_dir: str) -> dict:
+def extract_ast_project_data(target_dir: str) -> tuple[dict, dict]:
     ast_dict = {}
+    raw_functions = {}
 
     for file_path in iter_python_files(target_dir):
         with open(file_path, "r", encoding="utf-8") as f:
             source = f.read()
 
         try:
-            ast_dict[file_path] = extract_ast_code_data(source, file_path, target_dir)
+            ast_data, raw = extract_ast_code_data(source, file_path, target_dir)
         except SyntaxError as e:
-            print(f'Error in {file_path}: {e}')
+            logger.warning(f'Error in {file_path}: {e}')
+            continue
 
+        ast_dict[file_path] = ast_data
+        raw_functions.update(raw)
     logger.info("AST Parsing Complete")
-    return ast_dict
+    return ast_dict, raw_functions
