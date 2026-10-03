@@ -25,6 +25,7 @@ def update_pipeline():
     asyncio.run(create_docstrings(RAW_FUNCTIONS_UPD_PATH, DESCRIBED_FUNCTIONS_UPD_PATH))
     merge_ast_and_docs(AST_FUNCTIONS_UPD_PATH, DESCRIBED_FUNCTIONS_UPD_PATH, RAG_FUNCTIONS_UPD_PATH)
     asyncio.run(export_to_rag(RAW_FUNCTIONS_UPD_PATH, RAG_FUNCTIONS_UPD_PATH))
+    logger.info('Update pipeline was successfully finished.')
 
 if __name__ == "__main__":
     update_pipeline()

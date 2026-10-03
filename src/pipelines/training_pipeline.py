@@ -32,7 +32,7 @@ def training_pipeline():
     asyncio.run(create_docstrings(RAW_FUNCTIONS_PATH, DESCRIBED_FUNCTIONS_PATH))
     merge_ast_and_docs(AST_FUNCTIONS_PATH, DESCRIBED_FUNCTIONS_PATH, RAG_FUNCTIONS_PATH)
     asyncio.run(export_to_rag(RAW_FUNCTIONS_PATH, RAG_FUNCTIONS_PATH))
-
+    logger.info('Training pipeline was successfully finished.')
 
 if __name__ == "__main__":
     training_pipeline()
