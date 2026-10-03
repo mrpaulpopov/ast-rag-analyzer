@@ -30,7 +30,7 @@ def training_pipeline():
     save_last_run()
     extract_project_ast_code_structure()
     asyncio.run(create_docstrings(RAW_FUNCTIONS_PATH, DESCRIBED_FUNCTIONS_PATH))
-    merge_ast_and_docs(AST_FUNCTIONS_PATH, DESCRIBED_FUNCTIONS_PATH)
+    merge_ast_and_docs(AST_FUNCTIONS_PATH, DESCRIBED_FUNCTIONS_PATH, RAG_FUNCTIONS_PATH)
     asyncio.run(export_to_rag(RAW_FUNCTIONS_PATH, RAG_FUNCTIONS_PATH))
 
 

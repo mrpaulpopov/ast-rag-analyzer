@@ -124,7 +124,7 @@ def extract_project_ast_code_structure(updated_files=None):
     logger.info(f"AST Parsing completed in {time.time() - start:.4f}s")
 
 
-def merge_ast_and_docs(ast_functions_path, described_functions_path):
+def merge_ast_and_docs(ast_functions_path, described_functions_path, rag_functions_path):
     ast_functions = json.loads(ast_functions_path.read_text(encoding="utf-8"))
     docs = json.loads(described_functions_path.read_text(encoding="utf-8"))
 
@@ -153,6 +153,6 @@ def merge_ast_and_docs(ast_functions_path, described_functions_path):
             if func_fullname in ast_functions[file_path]["functions"]:
                 ast_functions[file_path]["functions"][func_fullname] = docstring
 
-    RAG_FUNCTIONS_PATH.write_text(
+    rag_functions_path.write_text(
         json.dumps(ast_functions, indent=4, ensure_ascii=False), encoding="utf-8",
     )
