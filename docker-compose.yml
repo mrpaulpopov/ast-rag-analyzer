@@ -1,23 +1,87 @@
-version: '3.8'
-
 services:
   db:
     image: pgvector/pgvector:pg16
     container_name: ast_rag_db
     environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: rag_db
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_PORT: ${POSTGRES_PORT}
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./db_init:/docker-entrypoint-initdb.d
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U user -d rag_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 5
 
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ollama-init-analysis:
+    image: ollama/ollama:latest
+    container_name: ollama-init-analysis
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    command: pull ${ANALYSIS_MODEL}
+    depends_on:
+      ollama:
+        condition: service_healthy
+
+  ollama-init-vector:
+    image: ollama/ollama:latest
+    container_name: ollama-init-vector
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    command: pull ${VECTOR_MODEL}
+    depends_on:
+      ollama:
+        condition: service_healthy
+
+  app:
+    build: .
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: ${POSTGRES_PORT}
+      OLLAMA_HOST: http://ollama:11434
+    volumes:
+      - ${TARGET_DIR}:/app/data:ro
+      - ./artifacts:/app/artifacts
+    depends_on:
+      db:
+        condition: service_healthy
+      ollama-init-analysis:
+        condition: service_completed_successfully
+      ollama-init-vector:
+        condition: service_completed_successfully
+
+  adminer:
+    image: adminer:latest
+    container_name: adminer
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
 volumes:
   pgdata:
+  ollama_data:

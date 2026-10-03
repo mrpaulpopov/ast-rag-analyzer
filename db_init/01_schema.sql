@@ -14,3 +14,7 @@ CREATE TABLE IF NOT EXISTS code_knowledge_base (
 );
 
 CREATE INDEX ON code_knowledge_base USING hnsw (embedding vector_cosine_ops); -- HNSW (Hierarchical Navigable Small World)
+
+ALTER TABLE code_knowledge_base
+ADD CONSTRAINT unique_file_func UNIQUE (file_path, func_name);
+

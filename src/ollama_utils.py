@@ -1,14 +1,12 @@
+import ast
 import json
 import logging
 import os
-import asyncio
+import time
 
 import psycopg2
 from dotenv import load_dotenv
 from ollama import AsyncClient
-
-from src.paths import ALL_PROC_FUNCTIONS
-
 
 load_dotenv()
 
@@ -21,14 +19,13 @@ DB_PARAMS = {
 }
 
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-ANALYSIS_MODEL = "qwen2.5-coder:14b"
-
-
+ANALYSIS_MODEL = os.getenv("ANALYSIS_MODEL")
 
 logger = logging.getLogger(__name__)
 
+
 class OllamaGenerator:
-    def __init__(self, model_name="qwen2.5-coder:14b"):
+    def __init__(self, model_name=ANALYSIS_MODEL):
         self.model_name = model_name
         self.host = os.getenv("OLLAMA_HOST", "http://localhost:11434")
         self.client = AsyncClient(host=self.host)
@@ -54,43 +51,49 @@ class OllamaGenerator:
                 prompt=prompt,
                 stream=False,
                 options={
-                    "temperature": 0.0,
+                    "temperature": 0.0, # no warmth
                     "top_p": 0.9,
                 }
             )
             return response['response'].strip()
 
-        except Exception as e:
+        except Exception as e: # noqa: BLE001
             logger.error(f"Error during connection to Ollama: {e}")
             return "Error during connection to Ollama."
 
-async def create_docstrings(raw_functions: dict) -> dict:
+
+async def create_docstrings(raw_functions_path, described_functions_path) -> dict:
+    raw_functions = json.loads(raw_functions_path.read_text(encoding="utf-8"))
+    for key, code in raw_functions.items():
+        ast.parse(code)
+
+    start = time.time()
     ollama_dict = {}
 
-    # Инициализируем клиента Ollama ОДИН раз внутри активного event loop'а
     generator = OllamaGenerator()
 
     total = len(raw_functions)
     current = 1
 
     for key, func_code in raw_functions.items():
-        print(f"[{current}/{total}] Генерация описания для: {key}")
+        print(f"[{current}/{total}] Generating docstring for: {key}")
 
-        # Ждем ответа от модели, не блокируя и не закрывая event loop
         description = await generator.generate_docstring(func_code)
         print(description)
         ollama_dict[key] = description
 
         current += 1
 
-        with open(ALL_PROC_FUNCTIONS, "w", encoding="utf-8") as f:
+        with open(described_functions_path, "w", encoding="utf-8") as f:
             json.dump(ollama_dict, f, indent=4, ensure_ascii=False)
 
+    logger.info(f"Docstrings were successfully created in {time.time() - start:.4f}s")
     return ollama_dict
 
 
 async def analyze_impact(changed_func_name: str, new_code: str):
     client = AsyncClient(host=OLLAMA_HOST)
+
 
     print(f"🔄 Анализ влияния для измененной функции: {changed_func_name}...")
 
@@ -150,7 +153,7 @@ async def analyze_impact(changed_func_name: str, new_code: str):
 
     print("Выполняю кросс-проверку логики через LLM...\n")
     response = await client.generate(
-    model=ANALYSIS_MODEL,
-    prompt=validation_prompt
+        model=ANALYSIS_MODEL,
+        prompt=validation_prompt
     )
     print(response['response'])

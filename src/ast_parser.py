@@ -1,17 +1,25 @@
 import ast
-import os
+import json
 import logging
+import os
+import time
 
-import yaml
+from dotenv import load_dotenv
 
-from src.paths import CONFIG_PATH
-from collections.abc import Iterator
+from src.filesystem_utils import iter_python_files
+from src.paths import (
+    AST_FUNCTIONS_PATH,
+    AST_FUNCTIONS_UPD_PATH,
+    RAG_FUNCTIONS_PATH,
+    RAW_FUNCTIONS_PATH,
+    RAW_FUNCTIONS_UPD_PATH,
+)
 
 logger = logging.getLogger(__name__)
 
+load_dotenv()
 
-
-
+IGNORED_DIRS = {'.venv', '__pycache__'}
 
 class CodeExtractor(ast.NodeVisitor):
     def __init__(self, project_root, file_content, file_path):
@@ -72,16 +80,6 @@ class CodeExtractor(ast.NodeVisitor):
         self.visit_FunctionDef(node)
 
 
-def iter_python_files(target_dir: str, ignored_dirs: set[str] | None = None) -> Iterator[str]:
-    ignored = ignored_dirs or set() # protection of None
-    for root, dirs, files in os.walk(target_dir):
-        dirs[:] = [d for d in dirs if d not in ignored]
-
-        for file in files:
-            if file.endswith('.py') and not file.startswith('_'):
-                yield os.path.join(root, file)
-
-
 def extract_ast_code_structure(source: str, file_path: str, project_root: str):
     tree = ast.parse(source)
     extractor = CodeExtractor(
@@ -93,11 +91,21 @@ def extract_ast_code_structure(source: str, file_path: str, project_root: str):
     return extractor.data, extractor.raw_functions
 
 
-def extract_project_ast_code_structure(target_dir: str, ignored_dirs: set[str] | None = None) -> tuple[dict, dict]:
+def extract_project_ast_code_structure(updated_files=None):
+    target_dir = "/app/data" # docker-relative folder
+
+    if updated_files is None:
+        file_paths = iter_python_files(target_dir, IGNORED_DIRS)
+        ast_path, raw_path = AST_FUNCTIONS_PATH, RAW_FUNCTIONS_PATH
+    else:
+        file_paths = updated_files
+        ast_path, raw_path = AST_FUNCTIONS_UPD_PATH, RAW_FUNCTIONS_UPD_PATH
+
+    start = time.time()
     ast_dict = {}
     raw_functions = {}
 
-    for file_path in iter_python_files(target_dir, ignored_dirs):
+    for file_path in file_paths:
         with open(file_path, "r", encoding="utf-8") as f:
             source = f.read()
 
@@ -109,5 +117,42 @@ def extract_project_ast_code_structure(target_dir: str, ignored_dirs: set[str] |
 
         ast_dict[file_path] = ast_data
         raw_functions.update(raw)
-    logger.info("AST Project Parsing Complete")
-    return ast_dict, raw_functions
+
+    ast_path.write_text(json.dumps(ast_dict, ensure_ascii=False, indent=4), encoding="utf-8")
+    raw_path.write_text(json.dumps(raw_functions, ensure_ascii=False, indent=4), encoding="utf-8")
+
+    logger.info(f"AST Parsing completed in {time.time() - start:.4f}s")
+
+
+def merge_ast_and_docs(ast_functions_path, described_functions_path):
+    ast_functions = json.loads(ast_functions_path.read_text(encoding="utf-8"))
+    docs = json.loads(described_functions_path.read_text(encoding="utf-8"))
+
+    for file_path, file_info in ast_functions.items():
+        funcs_list = file_info.get("functions", [])
+        file_info["functions"] = {func_name: None for func_name in funcs_list}
+
+        for cls_name, cls_info in file_info.get("classes", {}).items():
+            methods_list = cls_info.get("methods", [])
+            cls_info["methods"] = {method_name: None for method_name in methods_list}
+
+    for unique_key, docstring in docs.items():
+        try:
+            file_path, func_fullname = unique_key.split("::")
+        except ValueError:
+            continue
+
+        if file_path not in ast_functions:
+            continue
+
+        if "." in func_fullname:
+            cls_name, method_name = func_fullname.split(".", 1)
+            if cls_name in ast_functions[file_path]["classes"]:
+                ast_functions[file_path]["classes"][cls_name]["methods"][method_name] = docstring
+        else:
+            if func_fullname in ast_functions[file_path]["functions"]:
+                ast_functions[file_path]["functions"][func_fullname] = docstring
+
+    RAG_FUNCTIONS_PATH.write_text(
+        json.dumps(ast_functions, indent=4, ensure_ascii=False), encoding="utf-8",
+    )

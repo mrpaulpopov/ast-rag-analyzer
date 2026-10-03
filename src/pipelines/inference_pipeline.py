@@ -1,5 +1,4 @@
 import os
-import argparse
 import asyncio
 import psycopg2
 from dotenv import load_dotenv
@@ -8,7 +7,7 @@ import ast
 
 load_dotenv()
 
-ANALYSIS_MODEL = "qwen2.5-coder:7b"
+
 
 
 # --- Заглушки для твоей будущей логики AST-RAG ---
@@ -55,41 +54,40 @@ async def analyze_single_function(client, target_func_name: str, target_code: st
 
     # 4. Формируем умный промпт
     validation_prompt = f"""You are a strict automated AI code reviewer.
-A developer modified the function `{target_func_name}`.
-
-[TARGET FUNCTION CODE]
-```python
-{target_code}
-[OTHER MODIFIED FUNCTIONS IN THIS COMMIT] (Assume these are correct and available) {batch_context or "None"}
-[EXISTING RELATED FUNCTIONS FROM REPO] {db_context or "None"}
-TASK: Analyze if {target_func_name} will break the system or introduce bugs. Output format: STATUS: [PASS or FAIL] ISSUE: [Brief explanation]"""
-
-
-response = await client.generate(model=ANALYSIS_MODEL, prompt=validation_prompt)
-return f"🔹 Анализ [{target_func_name}]:\n{response['response']}"
+    A developer modified the function `{target_func_name}`.
+    
+    [TARGET FUNCTION CODE]
+    ```python
+    {target_code}
+    [OTHER MODIFIED FUNCTIONS IN THIS COMMIT] (Assume these are correct and available) {batch_context or "None"}
+    [EXISTING RELATED FUNCTIONS FROM REPO] {db_context or "None"}
+    TASK: Analyze if {target_func_name} will break the system or introduce bugs. Output format: STATUS: [PASS or FAIL] ISSUE: [Brief explanation]"""
 
 
-async def process_files(file_paths: list[str]): client = AsyncClient(
-    host=os.getenv("OLLAMA_HOST", "http://localhost:11434"))
+    response = await client.generate(model=ANALYSIS_MODEL, prompt=validation_prompt)
+    return f"🔹 Анализ [{target_func_name}]:\n{response['response']}"
 
 
-print(f"🚀 [PASS 1] Индексация {len(file_paths)} файлов...")
-batch_changes = {}
-for file_path in file_paths: if
-not os.path.exists(file_path):
-continue
-with open(file_path, 'r',
-          encoding='utf-8') as f: content = f.read()  # Наполняем глобальный кэш текущих изменений funcs = extract_functions_from_file(content) batch_changes.update(funcs)
-print(f"✅ Найдено {len(batch_changes)} измененных функций. Начинаем анализ...\n")
-print(f"🧠 [PASS 2] Запуск LLM-проверок...")
-final_report = []
-# Можно запускать через asyncio.gather, но для локальной LLM # лучше последовательно, чтобы не убить видеокарту (OOM) for func_name, code in batch_changes.items(): report = await analyze_single_function(client, func_name, code, batch_changes) final_report.append(report)
-print("\n" + "=" * 50)
-print("🎯 ИТОГОВЫЙ ОТЧЕТ IMPACT ANALYZER")
-print("=" * 50)
-for res in final_report: print(res)
-print("-" * 50)
-if name == "main": parser = argparse.ArgumentParser(description="Анализатор влияния изменений в коде.")
-parser.add_argument("files", nargs="+", help="Пути к измененным .py файлам (через пробел)")
-args = parser.parse_args()
-asyncio.run(process_files(args.files))
+async def process_files(file_paths: list[str]):
+    client = AsyncClient(host=os.getenv("OLLAMA_HOST", "http://localhost:11434"))
+
+
+    print(f"🚀 [PASS 1] Индексация {len(file_paths)} файлов...")
+    batch_changes = {}
+    for file_path in file_paths:
+        if not os.path.exists(file_path):
+            continue
+    with open(file_path, 'r', encoding='utf-8') as f:
+        content = f.read()  # Наполняем глобальный кэш текущих изменений funcs = extract_functions_from_file(content) batch_changes.update(funcs)
+    print(f"✅ Найдено {len(batch_changes)} измененных функций. Начинаем анализ...\n")
+    print(f"🧠 [PASS 2] Запуск LLM-проверок...")
+    final_report = []
+    # Можно запускать через asyncio.gather, но для локальной LLM # лучше последовательно, чтобы не убить видеокарту (OOM) for func_name, code in batch_changes.items(): report = await analyze_single_function(client, func_name, code, batch_changes) final_report.append(report)
+    print("\n" + "=" * 50)
+    print("🎯 ИТОГОВЫЙ ОТЧЕТ IMPACT ANALYZER")
+    print("=" * 50)
+    for res in final_report: print(res)
+    print("-" * 50)
+
+
+# asyncio.run(process_files(args.files))
