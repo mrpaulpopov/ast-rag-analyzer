@@ -64,6 +64,7 @@ services:
       OLLAMA_HOST: http://ollama:11434
     volumes:
       - ${TARGET_DIR}:/app/data:ro
+      - ./incoming_files:/app/incoming:ro
       - ./artifacts:/app/artifacts
     depends_on:
       db:

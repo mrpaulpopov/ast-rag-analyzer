@@ -1,93 +1,192 @@
-import os
-import asyncio
-import psycopg2
-from dotenv import load_dotenv
-from ollama import AsyncClient
 import ast
+import asyncio
+import logging
+import os
+import textwrap
 
-load_dotenv()
+import psycopg2
+from ollama import AsyncClient
+
+from src.ast_parser import extract_ast_code_structure
+from src.filesystem_utils import iter_python_files
+
+logger = logging.getLogger(__name__)
+
+OLLAMA_HOST = os.getenv('OLLAMA_HOST')
+VECTOR_MODEL = os.getenv('VECTOR_MODEL')
+ANALYSIS_MODEL = os.getenv('ANALYSIS_MODEL')
+TARGET_DIR = os.getenv('TARGET_DIR')
+
+DB_PARAMS = {
+    "dbname": os.getenv('POSTGRES_DB'),
+    "user": os.getenv('POSTGRES_USER'),
+    "password": os.getenv('POSTGRES_PASSWORD'),
+    "host": os.getenv('POSTGRES_HOST'),
+    "port": os.getenv('POSTGRES_PORT')
+}
 
 
 
 
-# --- Заглушки для твоей будущей логики AST-RAG ---
-def extract_functions_from_file(file_content: str) -> dict:
-    """Извлекает функции через AST. Возвращает: {'func_name': 'код функции'}"""
-    # Имитация AST-парсера
-    return {"new_feature_func": file_content[:200]}
+def extract_functions_from_file(abs_path: str, rel_path: str, target_dir: str) -> dict:
+    """Возвращает {'file::func': 'код функции'}, используя правильный относительный путь."""
+    with open(abs_path, "r", encoding="utf-8") as f:
+        source = f.read()
+
+    try:
+        _, raw_functions = extract_ast_code_structure(source, rel_path, target_dir)
+    except SyntaxError as e:
+        logger.warning(f"Error in {rel_path}: {e}")
+        return {}
+
+    return raw_functions
 
 
 def find_called_functions_in_code(code: str) -> list[str]:
-    """Анализирует AST кода и возвращает список имен функций, которые он вызывает внутри себя."""
-    # Имитация
-    return ["helper_func_from_another_file"]
+    """Возвращает имена функций, которые вызываются внутри кода."""
+    try:
+        tree = ast.parse(textwrap.dedent(code))
+    except SyntaxError:
+        return []
+
+    names = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Name):         # foo()
+                names.append(node.func.id)
+            elif isinstance(node.func, ast.Attribute):  # self.foo()
+                names.append(node.func.attr)
+    return names
 
 
-# -------------------------------------------------
+async def get_db_dependencies(client, cursor, code: str) -> list[tuple]:
+    """Ищет похожие функции в PostgreSQL. Возвращает [('file::func', code)]."""
+    response = await client.embeddings(model=VECTOR_MODEL, prompt=code)
 
-async def get_db_dependencies(client, code: str) -> list[tuple]:
-    """Ищет связанные функции в PostgreSQL (старый стабильный код)."""
-    # В реальном коде здесь будет векторизация и запрос к pgvector
-    # Возвращает список: [(func_name, code)]
-    return [("old_db_func", "def old_db_func(): pass")]
+    cursor.execute(
+        """
+        SELECT file_path, func_name, raw_code
+        FROM code_knowledge_base
+        ORDER BY embedding <=> %s::vector
+        LIMIT 5
+        """,
+        (str(response["embedding"]),),
+    )
+    return [(f"{file_path}::{func_name}", raw_code)
+            for file_path, func_name, raw_code in cursor.fetchall()]
 
 
-async def analyze_single_function(client, target_func_name: str, target_code: str, batch_changes: dict):
-    """Анализирует одну функцию, учитывая и БД, и соседние измененные файлы."""
-
-    # 1. Какие функции вообще вызывает этот код?
-    called_funcs = find_called_functions_in_code(target_code)
-
-    # 2. Ищем зависимости ВНУТРИ текущего списка файлов (In-Memory)
-    batch_context = ""
-    for called_func in called_funcs:
-        if called_func in batch_changes and called_func != target_func_name:
-            batch_context += f"--- СОСЕДНЕЕ ИЗМЕНЕНИЕ: {called_func} ---\n```python\n{batch_changes[called_func]}\n```\n\n"
-
-    # 3. Ищем зависимости в PostgreSQL (векторный поиск)
-    db_context = ""
-    db_deps = await get_db_dependencies(client, target_code)
-    for dep_name, dep_code in db_deps:
-        # Не добавляем из БД то, что уже обновлено в текущем коммите!
-        if dep_name not in batch_changes:
-            db_context += f"--- ИЗ БАЗЫ ЗНАНИЙ: {dep_name} ---\n```python\n{dep_code}\n```\n\n"
-
-    # 4. Формируем умный промпт
-    validation_prompt = f"""You are a strict automated AI code reviewer.
-    A developer modified the function `{target_func_name}`.
+async def ask_llm(client, target_key: str, target_code: str, context: str, context_title: str) -> str:
+    """Общий запрос к LLM: функция + контекст."""
+    prompt = f"""You are a strict automated AI code reviewer.
+    A developer modified the function `{target_key}`.
     
     [TARGET FUNCTION CODE]
     ```python
     {target_code}
-    [OTHER MODIFIED FUNCTIONS IN THIS COMMIT] (Assume these are correct and available) {batch_context or "None"}
-    [EXISTING RELATED FUNCTIONS FROM REPO] {db_context or "None"}
-    TASK: Analyze if {target_func_name} will break the system or introduce bugs. Output format: STATUS: [PASS or FAIL] ISSUE: [Brief explanation]"""
+    ```
+    
+    [{context_title}]
+    {context or "None"}
+    
+    TASK: Analyze if the target function will break the system or introduce bugs.
+    Output format:
+    STATUS: [PASS or FAIL]
+    ISSUE: [Brief explanation]"""
+
+    response = await client.generate(model=ANALYSIS_MODEL, prompt=prompt)
+    return response["response"]
 
 
-    response = await client.generate(model=ANALYSIS_MODEL, prompt=validation_prompt)
-    return f"🔹 Анализ [{target_func_name}]:\n{response['response']}"
+async def check_against_project(client, cursor, target_key: str, target_code: str, batch_changes: dict) -> str:
+    """Pass 1: не ломает ли функция существующий проект (БД)."""
+    db_context = ""
+    for key, code in await get_db_dependencies(client, cursor, target_code):
+        if key not in batch_changes:  # версии изменённых функций в БД устарели
+            db_context += f"--- FROM KNOWLEDGE BASE: {key} ---\n{code}\n\n"
+
+    if not db_context.strip():
+        db_context = "No related functions found in the existing codebase. Evaluate the target function as a standalone addition."
+
+    return await ask_llm(client, target_key, target_code, db_context,
+                         "EXISTING RELATED FUNCTIONS FROM REPO")
 
 
-async def process_files(file_paths: list[str]):
-    client = AsyncClient(host=os.getenv("OLLAMA_HOST", "http://localhost:11434"))
+async def check_against_batch(client, target_key: str, target_code: str, batch_changes: dict) -> str:
+    """Pass 2: не ломает ли функция другие новые функции."""
+    called_funcs = find_called_functions_in_code(target_code)
+
+    batch_context = ""
+    for called_func in called_funcs:
+        for key, code in batch_changes.items():
+            if key != target_key and key.endswith((f"::{called_func}", f".{called_func}")):
+                batch_context += f"--- SIBLING CHANGE: {key} ---\n{code}\n\n"
+
+    return await ask_llm(client, target_key, target_code, batch_context,
+                         "OTHER MODIFIED FUNCTIONS IN THIS COMMIT (assume they are correct)")
 
 
-    print(f"🚀 [PASS 1] Индексация {len(file_paths)} файлов...")
+async def process_files(file_paths: list[tuple[str, str]]):
+    client = AsyncClient(host=OLLAMA_HOST)
+
+    # Индексация: достаём функции из изменённых файлов
+    logger.info(f"Indexing {len(file_paths)} files...")
     batch_changes = {}
-    for file_path in file_paths:
-        if not os.path.exists(file_path):
-            continue
-    with open(file_path, 'r', encoding='utf-8') as f:
-        content = f.read()  # Наполняем глобальный кэш текущих изменений funcs = extract_functions_from_file(content) batch_changes.update(funcs)
-    print(f"✅ Найдено {len(batch_changes)} измененных функций. Начинаем анализ...\n")
-    print(f"🧠 [PASS 2] Запуск LLM-проверок...")
-    final_report = []
-    # Можно запускать через asyncio.gather, но для локальной LLM # лучше последовательно, чтобы не убить видеокарту (OOM) for func_name, code in batch_changes.items(): report = await analyze_single_function(client, func_name, code, batch_changes) final_report.append(report)
+    for abs_path, rel_path in file_paths:
+        batch_changes.update(extract_functions_from_file(abs_path, rel_path, TARGET_DIR))
+    logger.info(f"Found {len(batch_changes)} changed functions")
+
+    try:
+        conn = psycopg2.connect(**DB_PARAMS)
+    except psycopg2.Error as e:
+        logger.error(f"Error during connecting to the DB: {e}")
+        return
+    cursor = conn.cursor()
+
+    # Последовательно, чтобы не перегрузить локальную модель
+    logger.info("[PASS 1] Checking against the project...")
+    report = {key: [] for key in batch_changes}  # {'file::func': [результаты проверок]}
+
+    for key, code in batch_changes.items():
+        try:
+            result = await check_against_project(client, cursor, key, code, batch_changes)
+            report[key].append(result)
+        except Exception as e:
+            logger.error(f"Error during analyzing {key}: {e}")
+            conn.rollback()
+
+    cursor.close()
+    conn.close()
+
+    logger.info("[PASS 2] Checking new functions against each other...")
+    for key, code in batch_changes.items():
+        try:
+            result = await check_against_batch(client, key, code, batch_changes)
+            report[key].append(result)
+        except Exception as e:
+            logger.error(f"Error during analyzing {key}: {e}")
+
     print("\n" + "=" * 50)
-    print("🎯 ИТОГОВЫЙ ОТЧЕТ IMPACT ANALYZER")
+    print("IMPACT ANALYZER REPORT")
     print("=" * 50)
-    for res in final_report: print(res)
-    print("-" * 50)
+    for key, results in report.items():
+        print(f"[{key}]")
+        for result in results:
+            print(result)
+        print("-" * 50)
 
 
-# asyncio.run(process_files(args.files))
+def process_incoming_files():
+    incoming_dir = "/app/incoming" # docker-relative folder
+    ignored_folders = {"venv", ".venv", "__pycache__", ".git"}
+
+    files_to_check = []
+    for abs_path in iter_python_files(incoming_dir, ignored_folders):
+        rel_path = os.path.relpath(abs_path, incoming_dir)
+        files_to_check.append((abs_path, rel_path))
+
+    return files_to_check
+
+
+if __name__ == "__main__":
+    asyncio.run(process_files(process_incoming_files()))
