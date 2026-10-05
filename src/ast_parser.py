@@ -164,28 +164,52 @@ def merge_ast_and_docs(ast_functions_path, described_functions_path, rag_functio
 
 
 def parse_code_safely(source: str, file_path: str):
+    """
+    1. Пытается распарсить код как Python 3.
+    2. При неудаче конвертирует через 2to3.
+    3. При падении 2to3 (из-за кривых отступов) лечит табы, и пробует 2to3 снова.
+    """
     try:
-        # 1. Сначала пробуем парсить напрямую (идеально для новых файлов)
+        # Попытка 1: Нативный парсинг (для современного кода)
         return ast.parse(source)
     except SyntaxError:
-        # 2. Сохраняем проблемный код во временный файл
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as tmp:
-            tmp.write(source)
-            tmp_path = tmp.name
+        pass  # Переходим к тяжелой артиллерии
 
+    # Создаем временный файл
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as tmp:
+        tmp.write(source)
+        tmp_path = tmp.name
+
+    try:
         try:
+            # Попытка 2: Стандартная конвертация 2to3
+            subprocess.run(["2to3", "-w", "-n", tmp_path],
+                           capture_output=True, check=True, text=True)
+        except subprocess.CalledProcessError:
+            logger.info(f"2to3 failed for {file_path}. Trying to heal indentation...")
+
+            # Попытка 3: Лечим табы и запускаем 2to3 заново
+            # Конвертируем все табы в 4 пробела прямо в тексте
+            healed_source = source.expandtabs(4)
+            with open(tmp_path, 'w', encoding='utf-8') as f:
+                f.write(healed_source)
+
+            # Снова натравливаем 2to3 на вылеченный файл
             subprocess.run(["2to3", "-w", "-n", tmp_path],
                            capture_output=True, check=True, text=True)
 
-            # 4. Читаем сконвертированный Python 3 код и успешно парсим его
-            converted_source = read_file_safely(tmp_path)
-            return ast.parse(converted_source)
+        # Читаем итоговый сконвертированный код
+        with open(tmp_path, 'r', encoding='utf-8') as f:
+            final_source = f.read()
 
-        except subprocess.CalledProcessError as e:
-            logger.error(f"2to3 failed for {file_path}: {e.stderr}")
-            return None
-        except SyntaxError as e:
-            logger.error(f"Still SyntaxError after 2to3 conversion in {file_path}: {e}")
-            return None
-        finally:
-            os.remove(tmp_path)  # Очищаем временный файл
+        return ast.parse(final_source)
+
+    except subprocess.CalledProcessError as e:
+        logger.error(f"2to3 completely failed for {file_path}: {e.stderr}")
+        return None
+    except SyntaxError as e:
+        logger.error(f"SyntaxError after all fixes in {file_path}: {e}")
+        return None
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)

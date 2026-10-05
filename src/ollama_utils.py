@@ -8,6 +8,8 @@ import psycopg2
 from dotenv import load_dotenv
 from ollama import AsyncClient
 
+from src.ast_parser import parse_code_safely
+
 load_dotenv()
 
 DB_PARAMS = {
@@ -65,7 +67,10 @@ class OllamaGenerator:
 async def create_docstrings(raw_functions_path, described_functions_path) -> dict:
     raw_functions = json.loads(raw_functions_path.read_text(encoding="utf-8"))
     for key, code in raw_functions.items():
-        ast.parse(code)
+        tree = parse_code_safely(source=code, file_path=key)
+        if tree is None:
+            logger.warning(f"Function {key} is skipped: unsupported syntaxis.")
+            continue
 
     start = time.time()
     ollama_dict = {}
