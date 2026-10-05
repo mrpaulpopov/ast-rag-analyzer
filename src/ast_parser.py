@@ -5,6 +5,7 @@ import os
 import subprocess
 import tempfile
 import time
+import textwrap
 
 from dotenv import load_dotenv
 
@@ -169,6 +170,8 @@ def parse_code_safely(source: str, file_path: str):
     2. При неудаче конвертирует через 2to3.
     3. При падении 2to3 (из-за кривых отступов) лечит табы, и пробует 2to3 снова.
     """
+    source = textwrap.dedent(source)
+
     try:
         # Попытка 1: Нативный парсинг (для современного кода)
         return ast.parse(source)
@@ -189,26 +192,50 @@ def parse_code_safely(source: str, file_path: str):
             logger.info(f"2to3 failed for {file_path}. Trying to heal indentation...")
 
             # Попытка 3: Лечим табы и запускаем 2to3 заново
-            # Конвертируем все табы в 4 пробела прямо в тексте
             healed_source = source.expandtabs(4)
+
+            # --- ПРИНУДИТЕЛЬНЫЙ СДВИГ ---
+            lines = healed_source.splitlines()
+            first_indent = 0
+
+            # 1. Находим отступ самой первой непустой строки (наш def)
+            for line in lines:
+                if line.strip():
+                    first_indent = len(line) - len(line.lstrip())
+                    break
+
+            # 2. Жестко отрезаем этот отступ у всех строк
+            if first_indent > 0:
+                healed_source = "\n".join(
+                    line[first_indent:] if line.startswith(" " * first_indent) else line
+                    for line in lines
+                )
+            # ----------------------------
+
             with open(tmp_path, 'w', encoding='utf-8') as f:
                 f.write(healed_source)
 
-            # Снова натравливаем 2to3 на вылеченный файл
-            subprocess.run(["2to3", "-w", "-n", tmp_path],
-                           capture_output=True, check=True, text=True)
+            # --- ИСПРАВЛЕННЫЙ БЛОК ---
+            try:
+                subprocess.run(["2to3", "-w", "-n", tmp_path],
+                               capture_output=True, check=True, text=True)
+            except subprocess.CalledProcessError as e:
+                # Если даже после лечения табов файл не парсится (например, EOF error)
+                logger.error(f"Fatal parse error in {file_path} after healing: {e.stderr}")
+                return None
+            # -------------------------
 
         # Читаем итоговый сконвертированный код
         with open(tmp_path, 'r', encoding='utf-8') as f:
             final_source = f.read()
 
+        final_source = final_source.replace('async=', 'is_async=').replace('async =', 'is_async =')
+
         return ast.parse(final_source)
 
-    except subprocess.CalledProcessError as e:
-        logger.error(f"2to3 completely failed for {file_path}: {e.stderr}")
+    except subprocess.CalledProcessError:
         return None
-    except SyntaxError as e:
-        logger.error(f"SyntaxError after all fixes in {file_path}: {e}")
+    except SyntaxError:
         return None
     finally:
         if os.path.exists(tmp_path):
