@@ -3,6 +3,7 @@ import asyncio
 import logging
 import os
 import textwrap
+import time
 
 import psycopg2
 from ollama import AsyncClient
@@ -82,24 +83,24 @@ async def analyze_single_function(client, cursor, target_key: str, target_code: 
     batch_context = get_batch_context(target_key, target_code, batch_changes)
 
     prompt = f"""You are a strict automated AI code reviewer.
-A developer modified the function `{target_key}`.
-
-[TARGET FUNCTION CODE]
-```python
-{target_code}
-```
-
-[EXISTING RELATED FUNCTIONS FROM REPO]
-{project_context}
-
-[OTHER MODIFIED FUNCTIONS IN THIS COMMIT] (assume they are correct)
-{batch_context}
-
-TASK: Analyze if the target function will break the system or introduce bugs,
-considering both the existing functions and the other modified functions.
-Output format:
-STATUS: PASS or FAIL
-ISSUE: brief explanation"""
+    A developer modified the function `{target_key}`.
+    
+    [TARGET FUNCTION CODE]
+    ```python
+    {target_code}
+    ```
+    
+    [EXISTING RELATED FUNCTIONS FROM REPO]
+    {project_context}
+    
+    [OTHER MODIFIED FUNCTIONS IN THIS COMMIT] (assume they are correct)
+    {batch_context}
+    
+    TASK: Analyze if the target function will break the system or introduce bugs,
+    considering both the existing functions and the other modified functions.
+    Output format:
+    STATUS: PASS or FAIL
+    ISSUE: brief explanation"""
 
     response = await client.generate(model=ANALYSIS_MODEL, prompt=prompt)
     return response["response"]
@@ -126,8 +127,9 @@ def get_batch_context(target_key: str, target_code: str, batch_changes: dict) ->
     return batch_context or "None"
 
 
-async def process_files(file_paths: list[tuple[str, str]]):
+async def inference_pipeline(file_paths: list[tuple[str, str]]):
     logger.info('Starting inference pipeline...')
+    start = time.time()
     client = AsyncClient(host=OLLAMA_HOST)
 
     # Индексация: достаём функции из изменённых файлов
@@ -164,6 +166,7 @@ async def process_files(file_paths: list[tuple[str, str]]):
     for res in report:
         print(res)
         print("-" * 50)
+    logger.info(f"Inference completed in {time.time() - start:.4f}s")
 
 
 def process_incoming_files():
@@ -179,4 +182,4 @@ def process_incoming_files():
 
 
 if __name__ == "__main__":
-    asyncio.run(process_files(process_incoming_files()))
+    asyncio.run(inference_pipeline(process_incoming_files()))

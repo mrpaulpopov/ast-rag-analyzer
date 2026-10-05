@@ -11,7 +11,7 @@ from src.paths import META_DATA_PATH
 logger = logging.getLogger(__name__)
 
 load_dotenv()
-IGNORED_DIRS = {'.venv', '__pycache__'}
+IGNORED_DIRS = {'.venv', '__pycache__', '.idea'}
 
 
 def iter_python_files(target_dir: str, ignored_dirs: set[str] | None = None) -> Iterator[str]:
