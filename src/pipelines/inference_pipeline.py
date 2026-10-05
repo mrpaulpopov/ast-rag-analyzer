@@ -127,6 +127,7 @@ def get_batch_context(target_key: str, target_code: str, batch_changes: dict) ->
 
 
 async def process_files(file_paths: list[tuple[str, str]]):
+    logger.info('Starting inference pipeline...')
     client = AsyncClient(host=OLLAMA_HOST)
 
     # Индексация: достаём функции из изменённых файлов
