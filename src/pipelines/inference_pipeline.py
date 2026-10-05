@@ -76,54 +76,54 @@ async def get_db_dependencies(client, cursor, code: str) -> list[tuple]:
             for file_path, func_name, raw_code in cursor.fetchall()]
 
 
-async def ask_llm(client, target_key: str, target_code: str, context: str, context_title: str) -> str:
-    """Общий запрос к LLM: функция + контекст."""
+async def analyze_single_function(client, cursor, target_key: str, target_code: str, batch_changes: dict) -> str:
+    """Один запрос к LLM: функция + контекст проекта + контекст других новых функций."""
+    project_context = await get_project_context(client, cursor, target_code, batch_changes)
+    batch_context = get_batch_context(target_key, target_code, batch_changes)
+
     prompt = f"""You are a strict automated AI code reviewer.
-    A developer modified the function `{target_key}`.
-    
-    [TARGET FUNCTION CODE]
-    ```python
-    {target_code}
-    ```
-    
-    [{context_title}]
-    {context or "None"}
-    
-    TASK: Analyze if the target function will break the system or introduce bugs.
-    Output format:
-    STATUS: [PASS or FAIL]
-    ISSUE: [Brief explanation]"""
+A developer modified the function `{target_key}`.
+
+[TARGET FUNCTION CODE]
+```python
+{target_code}
+```
+
+[EXISTING RELATED FUNCTIONS FROM REPO]
+{project_context}
+
+[OTHER MODIFIED FUNCTIONS IN THIS COMMIT] (assume they are correct)
+{batch_context}
+
+TASK: Analyze if the target function will break the system or introduce bugs,
+considering both the existing functions and the other modified functions.
+Output format:
+STATUS: PASS or FAIL
+ISSUE: brief explanation"""
 
     response = await client.generate(model=ANALYSIS_MODEL, prompt=prompt)
     return response["response"]
 
 
-async def check_against_project(client, cursor, target_key: str, target_code: str, batch_changes: dict) -> str:
-    """Pass 1: не ломает ли функция существующий проект (БД)."""
+async def get_project_context(client, cursor, target_code: str, batch_changes: dict) -> str:
+    """Связанные функции из существующего проекта (БД)."""
     db_context = ""
     for key, code in await get_db_dependencies(client, cursor, target_code):
         if key not in batch_changes:  # версии изменённых функций в БД устарели
             db_context += f"--- FROM KNOWLEDGE BASE: {key} ---\n{code}\n\n"
 
-    if not db_context.strip():
-        db_context = "No related functions found in the existing codebase. Evaluate the target function as a standalone addition."
-
-    return await ask_llm(client, target_key, target_code, db_context,
-                         "EXISTING RELATED FUNCTIONS FROM REPO")
+    return db_context or "No related functions found in the existing codebase."
 
 
-async def check_against_batch(client, target_key: str, target_code: str, batch_changes: dict) -> str:
-    """Pass 2: не ломает ли функция другие новые функции."""
-    called_funcs = find_called_functions_in_code(target_code)
-
+def get_batch_context(target_key: str, target_code: str, batch_changes: dict) -> str:
+    """Другие новые функции, которые вызывает целевая функция."""
     batch_context = ""
-    for called_func in called_funcs:
+    for called_func in find_called_functions_in_code(target_code):
         for key, code in batch_changes.items():
             if key != target_key and key.endswith((f"::{called_func}", f".{called_func}")):
                 batch_context += f"--- SIBLING CHANGE: {key} ---\n{code}\n\n"
 
-    return await ask_llm(client, target_key, target_code, batch_context,
-                         "OTHER MODIFIED FUNCTIONS IN THIS COMMIT (assume they are correct)")
+    return batch_context or "None"
 
 
 async def process_files(file_paths: list[tuple[str, str]]):
@@ -144,13 +144,12 @@ async def process_files(file_paths: list[tuple[str, str]]):
     cursor = conn.cursor()
 
     # Последовательно, чтобы не перегрузить локальную модель
-    logger.info("[PASS 1] Checking against the project...")
-    report = {key: [] for key in batch_changes}  # {'file::func': [результаты проверок]}
-
+    logger.info("Running LLM checks...")
+    report = []
     for key, code in batch_changes.items():
         try:
-            result = await check_against_project(client, cursor, key, code, batch_changes)
-            report[key].append(result)
+            result = await analyze_single_function(client, cursor, key, code, batch_changes)
+            report.append(f"[{key}]\n{result}")
         except Exception as e:
             logger.error(f"Error during analyzing {key}: {e}")
             conn.rollback()
@@ -158,21 +157,11 @@ async def process_files(file_paths: list[tuple[str, str]]):
     cursor.close()
     conn.close()
 
-    logger.info("[PASS 2] Checking new functions against each other...")
-    for key, code in batch_changes.items():
-        try:
-            result = await check_against_batch(client, key, code, batch_changes)
-            report[key].append(result)
-        except Exception as e:
-            logger.error(f"Error during analyzing {key}: {e}")
-
     print("\n" + "=" * 50)
     print("IMPACT ANALYZER REPORT")
     print("=" * 50)
-    for key, results in report.items():
-        print(f"[{key}]")
-        for result in results:
-            print(result)
+    for res in report:
+        print(res)
         print("-" * 50)
 
 
