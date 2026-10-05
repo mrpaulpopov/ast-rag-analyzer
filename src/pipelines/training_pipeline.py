@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 def training_pipeline():
     logger.info('Make sure to get the latest revision. Starting in 7 seconds...')
     time.sleep(7)
+    logger.info('Starting training pipeline...')
 
     save_last_run()
     extract_project_ast_code_structure()

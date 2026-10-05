@@ -53,3 +53,20 @@ def get_changed_files():
         logger.info(f"{path} was changed.")
 
     return list(iter_modified_files(target_dir, last_run_ts, IGNORED_DIRS))
+
+
+def read_file_safely(file_path: str) -> str:
+    """Пробует прочитать файл в разных кодировках. Если не выходит — заменяет битые символы."""
+    encodings = ['utf-8', 'windows-1251', 'latin-1']
+
+    for enc in encodings:
+        try:
+            with open(file_path, 'r', encoding=enc) as f:
+                return f.read()
+        except UnicodeDecodeError:
+            continue
+
+    # Если ни одна кодировка не подошла, читаем принудительно, заменяя битые символы на "?"
+    # Для построения AST-дерева битые буквы в комментариях или строках не имеют значения
+    with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+        return f.read()

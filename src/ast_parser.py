@@ -8,7 +8,7 @@ import time
 
 from dotenv import load_dotenv
 
-from src.filesystem_utils import iter_python_files
+from src.filesystem_utils import iter_python_files, read_file_safely
 from src.paths import (
     AST_FUNCTIONS_PATH,
     AST_FUNCTIONS_UPD_PATH,
@@ -83,6 +83,11 @@ class CodeExtractor(ast.NodeVisitor):
 
 def extract_ast_code_structure(source: str, file_path: str, project_root: str):
     tree = parse_code_safely(source, file_path)
+
+    if tree is None:
+        logger.warning(f"File {file_path} is skipped: can't process AST.")
+        return [], {}
+
     extractor = CodeExtractor(
         project_root=project_root,
         file_content=source,
@@ -107,8 +112,7 @@ def extract_project_ast_code_structure(updated_files=None):
     raw_functions = {}
 
     for file_path in file_paths:
-        with open(file_path, "r", encoding="utf-8") as f:
-            source = f.read()
+        source = read_file_safely(file_path)
 
         try:
             ast_data, raw = extract_ast_code_structure(source, file_path, target_dir)
@@ -164,8 +168,6 @@ def parse_code_safely(source: str, file_path: str):
         # 1. Сначала пробуем парсить напрямую (идеально для новых файлов)
         return ast.parse(source)
     except SyntaxError:
-        logger.info(f"SyntaxError in {file_path}, falling back to 2to3 conversion...")
-
         # 2. Сохраняем проблемный код во временный файл
         with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as tmp:
             tmp.write(source)
@@ -176,8 +178,7 @@ def parse_code_safely(source: str, file_path: str):
                            capture_output=True, check=True, text=True)
 
             # 4. Читаем сконвертированный Python 3 код и успешно парсим его
-            with open(tmp_path, 'r', encoding='utf-8') as tmp_read:
-                converted_source = tmp_read.read()
+            converted_source = read_file_safely(tmp_path)
             return ast.parse(converted_source)
 
         except subprocess.CalledProcessError as e:

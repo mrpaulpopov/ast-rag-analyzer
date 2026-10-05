@@ -9,7 +9,7 @@ import psycopg2
 from ollama import AsyncClient
 
 from src.ast_parser import extract_ast_code_structure
-from src.filesystem_utils import iter_python_files
+from src.filesystem_utils import iter_python_files, read_file_safely
 
 logger = logging.getLogger(__name__)
 
@@ -31,8 +31,7 @@ DB_PARAMS = {
 
 def extract_functions_from_file(abs_path: str, rel_path: str, target_dir: str) -> dict:
     """Возвращает {'file::func': 'код функции'}, используя правильный относительный путь."""
-    with open(abs_path, "r", encoding="utf-8") as f:
-        source = f.read()
+    source = read_file_safely(abs_path)
 
     try:
         _, raw_functions = extract_ast_code_structure(source, rel_path, target_dir)
