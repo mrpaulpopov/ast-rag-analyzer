@@ -2,6 +2,8 @@ import ast
 import json
 import logging
 import os
+import subprocess
+import tempfile
 import time
 
 from dotenv import load_dotenv
@@ -10,7 +12,6 @@ from src.filesystem_utils import iter_python_files
 from src.paths import (
     AST_FUNCTIONS_PATH,
     AST_FUNCTIONS_UPD_PATH,
-    RAG_FUNCTIONS_PATH,
     RAW_FUNCTIONS_PATH,
     RAW_FUNCTIONS_UPD_PATH,
 )
@@ -81,7 +82,7 @@ class CodeExtractor(ast.NodeVisitor):
 
 
 def extract_ast_code_structure(source: str, file_path: str, project_root: str):
-    tree = ast.parse(source)
+    tree = parse_code_safely(source, file_path)
     extractor = CodeExtractor(
         project_root=project_root,
         file_content=source,
@@ -156,3 +157,34 @@ def merge_ast_and_docs(ast_functions_path, described_functions_path, rag_functio
     rag_functions_path.write_text(
         json.dumps(ast_functions, indent=4, ensure_ascii=False), encoding="utf-8",
     )
+
+
+def parse_code_safely(source: str, file_path: str):
+    try:
+        # 1. Сначала пробуем парсить напрямую (идеально для новых файлов)
+        return ast.parse(source)
+    except SyntaxError:
+        logger.info(f"SyntaxError in {file_path}, falling back to 2to3 conversion...")
+
+        # 2. Сохраняем проблемный код во временный файл
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as tmp:
+            tmp.write(source)
+            tmp_path = tmp.name
+
+        try:
+            subprocess.run(["2to3", "-w", "-n", tmp_path],
+                           capture_output=True, check=True, text=True)
+
+            # 4. Читаем сконвертированный Python 3 код и успешно парсим его
+            with open(tmp_path, 'r', encoding='utf-8') as tmp_read:
+                converted_source = tmp_read.read()
+            return ast.parse(converted_source)
+
+        except subprocess.CalledProcessError as e:
+            logger.error(f"2to3 failed for {file_path}: {e.stderr}")
+            return None
+        except SyntaxError as e:
+            logger.error(f"Still SyntaxError after 2to3 conversion in {file_path}: {e}")
+            return None
+        finally:
+            os.remove(tmp_path)  # Очищаем временный файл
