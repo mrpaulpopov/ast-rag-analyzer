@@ -76,7 +76,8 @@ async def get_db_dependencies(client, cursor, code: str) -> list[tuple]:
     MAX_COSINE_DISTANCE = float(cfg["inference"]["max_cosine_distance"])
     TOP_K = int(cfg["inference"]["top_k"])
 
-    response = await client.embeddings(model=VECTOR_MODEL, prompt=code)
+    safe_code = code[:4000] # RAG limits
+    response = await client.embeddings(model=VECTOR_MODEL, prompt=safe_code)
     query_vector = str(response["embedding"])
 
     cursor.execute(
@@ -119,8 +120,9 @@ async def analyze_single_function(client, cursor, target_key: str, target_code: 
     
     TASK: Analyze if the target function will break the system or introduce bugs,
     considering both the existing functions and the other modified functions.
-    If a function's signature changes (e.g., added/removed arguments), 
-    immediately check the provided RAG context for dependent function calls. 
+    STRICT RULE (Signatures): If a function signature is modified (e.g., a new argument is added or removed), 
+    you MUST ASSUME that the developer correctly updated the function calls elsewhere in the project, 
+    UNLESS the provided RAG context explicitly contains a broken call.
     
     Output format:
     STATUS: PASS or FAIL
@@ -133,7 +135,11 @@ async def analyze_single_function(client, cursor, target_key: str, target_code: 
 async def get_project_context(client, cursor, target_code: str, batch_changes: dict) -> str:
     """Связанные функции из существующего проекта (БД)."""
     db_context = ""
-    for key, code in await get_db_dependencies(client, cursor, target_code):
+
+    dependencies = await get_db_dependencies(client, cursor, target_code)
+    logger.info(f"RAG retrieved {len(dependencies)} context files.")
+
+    for key, code in dependencies:
         if key not in batch_changes:  # версии изменённых функций в БД устарели
             db_context += f"--- FROM KNOWLEDGE BASE: {key} ---\n{code}\n\n"
 
@@ -177,8 +183,8 @@ async def inference_pipeline(file_paths: list[tuple[str, str]]):
         try:
             result = await analyze_single_function(client, cursor, key, code, batch_changes)
 
-            # Filtering FAIL-only issues
-            if "STATUS: PASS" in report.upper():
+            # Filtering FAIL-only issues: проверяем текущий result, а не весь список report
+            if "STATUS: PASS" in str(result).upper():
                 report.append(f"[{key}]\nSTATUS: PASS")
             else:
                 report.append(f"[{key}]\n{result}")
