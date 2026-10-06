@@ -136,10 +136,7 @@ async def get_project_context(client, cursor, target_code: str, batch_changes: d
     """Связанные функции из существующего проекта (БД)."""
     db_context = ""
 
-    dependencies = await get_db_dependencies(client, cursor, target_code)
-    logger.info(f"RAG retrieved {len(dependencies)} context files.")
-
-    for key, code in dependencies:
+    for key, code in await get_db_dependencies(client, cursor, target_code):
         if key not in batch_changes:  # версии изменённых функций в БД устарели
             db_context += f"--- FROM KNOWLEDGE BASE: {key} ---\n{code}\n\n"
 

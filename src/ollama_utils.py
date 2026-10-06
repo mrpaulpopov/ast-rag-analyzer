@@ -165,7 +165,8 @@ async def analyze_impact(changed_func_name: str, new_code: str):
         prompt=validation_prompt,
         options={
             "num_ctx": NUM_CTX,
-            "temperature": 0.1
+            "temperature": 0,
+            "seed": 42
         }
     )
     print(response['response'])
