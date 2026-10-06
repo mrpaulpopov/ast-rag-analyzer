@@ -1,0 +1,9 @@
+training:
+  create_ast: true
+  create_docstrings: true
+  merge_results: true
+  run_vector_indexing: true
+
+inference:
+  max_cosine_distance: 0.6
+  top_k: 5

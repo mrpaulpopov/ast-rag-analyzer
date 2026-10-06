@@ -6,6 +6,7 @@ CACHE_DIR = PROJECT_ROOT / "artifacts"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 META_DATA_PATH = CACHE_DIR / "meta_data.json"
+CONFIG_PATH = PROJECT_ROOT / "config.yaml"
 
 AST_FUNCTIONS_PATH = CACHE_DIR / "functions_ast.json"
 RAW_FUNCTIONS_PATH = CACHE_DIR / "functions_raw.json"

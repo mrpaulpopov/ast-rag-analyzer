@@ -84,7 +84,6 @@ async def create_docstrings(raw_functions_path, described_functions_path) -> dic
         print(f"[{current}/{total}] Generating docstring for: {key}")
 
         description = await generator.generate_docstring(func_code)
-        print(description)
         ollama_dict[key] = description
 
         current += 1

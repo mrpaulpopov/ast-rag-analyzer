@@ -87,7 +87,6 @@ async def process_item(client, cursor, file_path, func_name, docstring, raw_func
                 embedding = EXCLUDED.embedding;
         """
         cursor.execute(upsert_query, (file_path, func_name, raw_code, docstring, embedding))
-        logger.info(f"Upserted (Inserted/Updated): {unique_key}")
 
     except Exception as e: # noqa: BLE001
          logger.error(f"Error during processing {unique_key}: {e}")

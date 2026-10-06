@@ -6,10 +6,12 @@ import textwrap
 import time
 
 import psycopg2
+import yaml
 from ollama import AsyncClient
 
 from src.ast_parser import extract_ast_code_structure
 from src.filesystem_utils import iter_python_files, read_file_safely
+from src.paths import CONFIG_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -59,21 +61,34 @@ def find_called_functions_in_code(code: str) -> list[str]:
     return names
 
 
+
+
 async def get_db_dependencies(client, cursor, code: str) -> list[tuple]:
     """Ищет похожие функции в PostgreSQL. Возвращает [('file::func', code)]."""
+    cfg = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
+    MAX_COSINE_DISTANCE = float(cfg["inference"]["max_cosine_distance"])
+    TOP_K = int(cfg["inference"]["top_k"])
+
     response = await client.embeddings(model=VECTOR_MODEL, prompt=code)
+    query_vector = str(response["embedding"])
 
     cursor.execute(
         """
-        SELECT file_path, func_name, raw_code
+        SELECT file_path, func_name, raw_code, embedding <=> %s::vector AS distance
         FROM code_knowledge_base
-        ORDER BY embedding <=> %s::vector
-        LIMIT 5
+        WHERE embedding <=> %s::vector < %s
+        ORDER BY distance
+        LIMIT %s
         """,
-        (str(response["embedding"]),),
+        (query_vector, query_vector, MAX_COSINE_DISTANCE, TOP_K),
     )
+    rows = cursor.fetchall()
+
+    for file_path, func_name, _, distance in rows:
+        logger.debug(f"{file_path}::{func_name} distance={distance:.3f}")
+
     return [(f"{file_path}::{func_name}", raw_code)
-            for file_path, func_name, raw_code in cursor.fetchall()]
+            for file_path, func_name, raw_code, _ in rows]
 
 
 async def analyze_single_function(client, cursor, target_key: str, target_code: str, batch_changes: dict) -> str:
