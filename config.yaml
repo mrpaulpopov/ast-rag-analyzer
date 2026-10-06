@@ -5,5 +5,6 @@ training:
   run_vector_indexing: true
 
 inference:
-  max_cosine_distance: 0.6
-  top_k: 5
+  max_cosine_distance: 0.5
+  top_k: 15
+  num_ctx: 16384

@@ -5,10 +5,12 @@ import os
 import time
 
 import psycopg2
+import yaml
 from dotenv import load_dotenv
 from ollama import AsyncClient
 
 from src.ast_parser import parse_code_safely
+from src.paths import CONFIG_PATH
 
 load_dotenv()
 
@@ -97,9 +99,11 @@ async def create_docstrings(raw_functions_path, described_functions_path) -> dic
 
 async def analyze_impact(changed_func_name: str, new_code: str):
     client = AsyncClient(host=OLLAMA_HOST)
+    cfg = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
+    NUM_CTX = cfg["inference"]["num_ctx"]
 
 
-    print(f"🔄 Анализ влияния для измененной функции: {changed_func_name}...")
+    logger.info(f"🔄 Анализ влияния для измененной функции: {changed_func_name}...")
 
     # 1. Векторизуем измененный код
     embed_response = await client.embeddings(
@@ -155,9 +159,13 @@ async def analyze_impact(changed_func_name: str, new_code: str):
     ISSUE: [If FAIL, precisely describe what will break. If PASS, write "No conflicts detected."]
     """
 
-    print("Выполняю кросс-проверку логики через LLM...\n")
+    logger.info("Выполняю кросс-проверку логики через LLM...\n")
     response = await client.generate(
         model=ANALYSIS_MODEL,
-        prompt=validation_prompt
+        prompt=validation_prompt,
+        options={
+            "num_ctx": NUM_CTX,
+            "temperature": 0.1
+        }
     )
     print(response['response'])

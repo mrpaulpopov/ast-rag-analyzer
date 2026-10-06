@@ -2,6 +2,7 @@ import ast
 import asyncio
 import logging
 import os
+import sys
 import textwrap
 import time
 
@@ -12,6 +13,12 @@ from ollama import AsyncClient
 from src.ast_parser import extract_ast_code_structure
 from src.filesystem_utils import iter_python_files, read_file_safely
 from src.paths import CONFIG_PATH
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s",
+    stream=sys.stdout
+)
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +119,9 @@ async def analyze_single_function(client, cursor, target_key: str, target_code: 
     
     TASK: Analyze if the target function will break the system or introduce bugs,
     considering both the existing functions and the other modified functions.
+    If a function's signature changes (e.g., added/removed arguments), 
+    immediately check the provided RAG context for dependent function calls. 
+    
     Output format:
     STATUS: PASS or FAIL
     ISSUE: brief explanation"""
@@ -166,7 +176,13 @@ async def inference_pipeline(file_paths: list[tuple[str, str]]):
     for key, code in batch_changes.items():
         try:
             result = await analyze_single_function(client, cursor, key, code, batch_changes)
-            report.append(f"[{key}]\n{result}")
+
+            # Filtering FAIL-only issues
+            if "STATUS: PASS" in report.upper():
+                report.append(f"[{key}]\nSTATUS: PASS")
+            else:
+                report.append(f"[{key}]\n{result}")
+
         except Exception as e:
             logger.error(f"Error during analyzing {key}: {e}")
             conn.rollback()

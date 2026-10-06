@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import sys
 
 from src.ast_parser import extract_project_ast_code_structure, merge_ast_and_docs
 from src.filesystem_utils import get_changed_files, save_last_run
@@ -11,6 +12,12 @@ from src.paths import (
     RAW_FUNCTIONS_UPD_PATH,
 )
 from src.rag import export_to_rag
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s",
+    stream=sys.stdout
+)
 
 logger = logging.getLogger(__name__)
 
