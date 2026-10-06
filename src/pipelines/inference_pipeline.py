@@ -106,27 +106,36 @@ async def analyze_single_function(client, cursor, target_key: str, target_code: 
 
     prompt = f"""You are a strict automated AI code reviewer.
     A developer modified the function `{target_key}`.
-    
+
     [TARGET FUNCTION CODE]
     ```python
     {target_code}
     ```
-    
+
     [EXISTING RELATED FUNCTIONS FROM REPO]
     {project_context}
-    
+
     [OTHER MODIFIED FUNCTIONS IN THIS COMMIT] (assume they are correct)
     {batch_context}
-    
-    TASK: Analyze if the target function will break the system or introduce bugs,
-    considering both the existing functions and the other modified functions.
-    STRICT RULE (Signatures): If a function signature is modified (e.g., a new argument is added or removed), 
-    you MUST ASSUME that the developer correctly updated the function calls elsewhere in the project, 
-    UNLESS the provided RAG context explicitly contains a broken call.
-    
-    Output format:
+
+    TASK: Check the target function for bugs that would break the system. Go through these checks one by one:
+    1. Parameters: every parameter in the signature (except self, cls, *args, **kwargs) must be used in the function body.
+       An unused parameter is a FAIL: it is either left over by mistake or callers do not pass it.
+       If a parameter is used in the body, assume that all callers were updated, unless the provided context shows a broken call.
+    2. Names: every variable and `self.` attribute must be a parameter, a local variable, an import or a known name.
+       If a name does not appear in the provided context, report it ONLY when a similar name with a different spelling
+       appears there (e.g. `self.animation_dir` elsewhere and `self.anim_dir_path` here).
+       Do not report names just because they are not shown: they may be defined in `__init__`.
+    3. Return value: compare what the function returns with how the related functions use its result.
+       A different type or structure (list instead of dict, tuple instead of one value, None instead of a value) is a FAIL.
+    4. Calls: calls to other functions must match their signatures in the provided context (number and names of arguments).
+    Report only problems you can point to in the code above. Do not guess about code you cannot see. Ignore style and comments.
+
+    Answer in exactly this format:
+    CHECKS: one short line for each of the 4 checks
     STATUS: PASS or FAIL
-    ISSUE: brief explanation"""
+    ISSUE: if FAIL, quote the exact line and explain what is wrong; if PASS, write "No problems detected."
+    """
 
     response = await client.generate(model=ANALYSIS_MODEL, prompt=prompt)
     return response["response"]

@@ -143,20 +143,34 @@ async def analyze_impact(changed_func_name: str, new_code: str):
 
     # 4. Жесткий промпт для валидации поломок
     validation_prompt = f"""You are a strict automated AI code reviewer and impact analyzer.
-    A developer has modified the function `{changed_func_name}`. 
-    
-    Here is the NEW code for this function:
+    A developer modified the function `{changed_func_name}`.
+
+    [NEW CODE OF THE FUNCTION]
+    ```python
     {new_code}
-    
-    Below are the dependent or closely related functions from the rest of the codebase (they may call this function or share the same data structures): {related_code_context}
-    TASK: Analyze whether the new code in {changed_func_name} will break the execution of the provided related functions OR introduce critical logical bugs into the pipeline. Don't use markdown.
-    Pay special attention to:
-    1. Interface changes: missing/added arguments or altered return types.
-    2. Data structure alterations: removal of dictionary keys or expected object attributes.
-    3. LOGICAL BUGS: changes in array slicing, boundary conditions (e.g., indices, thresholds), mathematical operations, or state modifications that will cause the related functions to receive incorrect, shifted, or overlapping data.
-    Output your report STRICTLY in the exact format below:
-    STATUS: [PASS or FAIL]
-    ISSUE: [If FAIL, precisely describe what will break. If PASS, write "No conflicts detected."]
+    ```
+
+    [DEPENDENT OR RELATED FUNCTIONS FROM THE CODEBASE] (they may call this function or share its data structures)
+    ```python
+    {related_code_context}
+    ```
+
+    TASK: Decide whether the new code of `{changed_func_name}` breaks the related functions or introduces a critical logical bug.
+    Check these points one by one:
+    1. Interface: for every related function that calls `{changed_func_name}`, compare the call (number, order and names of arguments)
+       with the new signature, and compare how the result is used with what the new code really returns (type, structure, None).
+    2. Data structures: dictionary keys or object attributes that related functions read but the new code no longer provides,
+       or that the new code reads but related functions do not provide.
+    3. Logic: array slicing, indices, boundary conditions, thresholds, math operations or state changes that make
+       the related functions receive incorrect, shifted or overlapping data.
+    Report only problems you can show with specific lines from the code above.
+    If no related function uses `{changed_func_name}`, do not report interface problems.
+    Do not guess about code you cannot see. Do not use markdown in your answer.
+
+    Answer in exactly this format:
+    CHECKS: one short line for each of the 3 points
+    STATUS: PASS or FAIL
+    ISSUE: if FAIL, quote the exact line and describe what will break; if PASS, write "No conflicts detected."
     """
 
     logger.info("Выполняю кросс-проверку логики через LLM...\n")
