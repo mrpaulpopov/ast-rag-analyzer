@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import subprocess
+import sys
 import tempfile
 import time
 import textwrap
@@ -22,6 +23,7 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 IGNORED_DIRS = {'.venv', '__pycache__'}
+
 
 class CodeExtractor(ast.NodeVisitor):
     def __init__(self, project_root, file_content, file_path):
@@ -83,15 +85,17 @@ class CodeExtractor(ast.NodeVisitor):
 
 
 def extract_ast_code_structure(source: str, file_path: str, project_root: str):
-    tree = parse_code_safely(source, file_path)
+    tree, used_source = parse_python_source(source, file_path)
 
     if tree is None:
         logger.warning(f"File {file_path} is skipped: can't process AST.")
-        return [], {}
+        return {"imports": [], "classes": {}, "functions": []}, {}
 
+    # file_content должен быть тем же текстом, по которому построено дерево,
+    # иначе get_source_segment вырежет не те строки (после 2to3 строки и колонки сдвигаются)
     extractor = CodeExtractor(
         project_root=project_root,
-        file_content=source,
+        file_content=used_source,
         file_path=file_path,
     )
     extractor.visit(tree)
@@ -99,7 +103,7 @@ def extract_ast_code_structure(source: str, file_path: str, project_root: str):
 
 
 def extract_project_ast_code_structure(updated_files=None):
-    target_dir = "/app/data" # docker-relative folder
+    target_dir = "/app/data"  # docker-relative folder
 
     if updated_files is None:
         file_paths = iter_python_files(target_dir, IGNORED_DIRS)
@@ -164,79 +168,60 @@ def merge_ast_and_docs(ast_functions_path, described_functions_path, rag_functio
     )
 
 
-def parse_code_safely(source: str, file_path: str):
-    """
-    1. Пытается распарсить код как Python 3.
-    2. При неудаче конвертирует через 2to3.
-    3. При падении 2to3 (из-за кривых отступов) лечит табы, и пробует 2to3 снова.
-    """
-    source = textwrap.dedent(source)
-
-    try:
-        # Попытка 1: Нативный парсинг (для современного кода)
-        return ast.parse(source)
-    except SyntaxError:
-        pass  # Переходим к тяжелой артиллерии
-
-    # Создаем временный файл
+def run_2to3(source: str, file_path: str):
+    """Конвертирует код Python 2 в Python 3. Возвращает новый текст или None при ошибке."""
     with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as tmp:
         tmp.write(source)
         tmp_path = tmp.name
 
     try:
-        try:
-            # Попытка 2: Стандартная конвертация 2to3
-            subprocess.run(["2to3", "-w", "-n", tmp_path],
-                           capture_output=True, check=True, text=True)
-        except subprocess.CalledProcessError:
-            logger.info(f"2to3 failed for {file_path}. Trying to heal indentation...")
-
-            # Попытка 3: Лечим табы и запускаем 2to3 заново
-            healed_source = source.expandtabs(4)
-
-            # --- ПРИНУДИТЕЛЬНЫЙ СДВИГ ---
-            lines = healed_source.splitlines()
-            first_indent = 0
-
-            # 1. Находим отступ самой первой непустой строки (наш def)
-            for line in lines:
-                if line.strip():
-                    first_indent = len(line) - len(line.lstrip())
-                    break
-
-            # 2. Жестко отрезаем этот отступ у всех строк
-            if first_indent > 0:
-                healed_source = "\n".join(
-                    line[first_indent:] if line.startswith(" " * first_indent) else line
-                    for line in lines
-                )
-            # ----------------------------
-
-            with open(tmp_path, 'w', encoding='utf-8') as f:
-                f.write(healed_source)
-
-            # --- ИСПРАВЛЕННЫЙ БЛОК ---
-            try:
-                subprocess.run(["2to3", "-w", "-n", tmp_path],
-                               capture_output=True, check=True, text=True)
-            except subprocess.CalledProcessError as e:
-                # Если даже после лечения табов файл не парсится (например, EOF error)
-                logger.error(f"Fatal parse error in {file_path} after healing: {e.stderr}")
-                return None
-            # -------------------------
-
-        # Читаем итоговый сконвертированный код
+        subprocess.run(
+            [sys.executable, "-W", "ignore", "-m", "lib2to3", "-w", "-n", "--no-diffs", tmp_path],
+            capture_output=True, check=True, text=True,
+        )
         with open(tmp_path, 'r', encoding='utf-8') as f:
-            final_source = f.read()
-
-        final_source = final_source.replace('async=', 'is_async=').replace('async =', 'is_async =')
-
-        return ast.parse(final_source)
-
-    except subprocess.CalledProcessError:
-        return None
-    except SyntaxError:
+            return f.read()
+    except subprocess.CalledProcessError as e:
+        last_line = e.stderr.strip().splitlines()[-1] if e.stderr and e.stderr.strip() else ""
+        logger.info(f"2to3 failed for {file_path}: {last_line}")
         return None
     finally:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
+
+
+def parse_python_source(source: str, file_path: str):
+    """
+    Возвращает (tree, source), где source — тот самый текст, по которому построено дерево.
+    1. Пытается распарсить код как Python 3.
+    2. При неудаче конвертирует через 2to3.
+    3. Если не вышло, разворачивает табы как в Python 2 (таб = 8 колонок) и пробует 2to3 снова.
+    Если ничего не помогло, возвращает (None, source).
+    """
+    source = textwrap.dedent(source)
+
+    try:
+        return ast.parse(source), source
+    except SyntaxError:
+        pass
+
+    for candidate in (source, source.expandtabs(8)):
+        converted = run_2to3(candidate, file_path)
+        if converted is None:
+            continue
+
+        converted = converted.replace('async=', 'is_async=').replace('async =', 'is_async =')
+
+        try:
+            return ast.parse(converted), converted
+        except SyntaxError as e:
+            logger.info(f"Converted code of {file_path} still doesn't parse: {e}")
+
+    logger.error(f"Fatal parse error in {file_path}: can't convert to Python 3")
+    return None, source
+
+
+def parse_code_safely(source: str, file_path: str):
+    """Обёртка для старых вызовов: возвращает только дерево (или None)."""
+    tree, _ = parse_python_source(source, file_path)
+    return tree
