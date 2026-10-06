@@ -101,6 +101,9 @@ async def get_db_dependencies(client, cursor, code: str) -> list[tuple]:
 
 async def analyze_single_function(client, cursor, target_key: str, target_code: str, batch_changes: dict) -> str:
     """Один запрос к LLM: функция + контекст проекта + контекст других новых функций."""
+    cfg = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
+    NUM_CTX = cfg["inference"]["num_ctx"]
+
     project_context = await get_project_context(client, cursor, target_code, batch_changes)
     batch_context = get_batch_context(target_key, target_code, batch_changes)
 
@@ -122,10 +125,13 @@ async def analyze_single_function(client, cursor, target_key: str, target_code: 
     1. Parameters: every parameter in the signature (except self, cls, *args, **kwargs) must be used in the function body.
        An unused parameter is a FAIL: it is either left over by mistake or callers do not pass it.
        If a parameter is used in the body, assume that all callers were updated, unless the provided context shows a broken call.
-    2. Names: every variable and `self.` attribute must be a parameter, a local variable, an import or a known name.
-       If a name does not appear in the provided context, report it ONLY when a similar name with a different spelling
-       appears there (e.g. `self.animation_dir` elsewhere and `self.anim_dir_path` here).
-       Do not report names just because they are not shown: they may be defined in `__init__`.
+    2. Names and Scope:
+    - Local variables: Every variable read inside the function body MUST be assigned beforehand within the same function
+     or passed as a parameter. Using an undefined local variable (e.g. returning `parent_node` when 
+     only `parents` was assigned) is a strict FAIL (NameError).
+    - Class attributes (`self.`): If a `self.` attribute is not shown in the context, 
+    report it ONLY if a similarly spelled attribute exists elsewhere in the context 
+    (e.g. `self.animation_dir` vs `self.anim_dir_path`). Otherwise, do not report it, as it may be defined in `__init__`.
     3. Return value: compare what the function returns with how the related functions use its result.
        A different type or structure (list instead of dict, tuple instead of one value, None instead of a value) is a FAIL.
     4. Calls: calls to other functions must match their signatures in the provided context (number and names of arguments).
@@ -137,7 +143,14 @@ async def analyze_single_function(client, cursor, target_key: str, target_code: 
     ISSUE: if FAIL, quote the exact line and explain what is wrong; if PASS, write "No problems detected."
     """
 
-    response = await client.generate(model=ANALYSIS_MODEL, prompt=prompt)
+    response = await client.generate(model=ANALYSIS_MODEL,
+                                     prompt=prompt,
+                                     options={
+                                         "num_ctx": NUM_CTX,
+                                         "temperature": 0,
+                                         "seed": 42
+                                     }
+                                     )
     return response["response"]
 
 
