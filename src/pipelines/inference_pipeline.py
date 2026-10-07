@@ -21,6 +21,8 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 OLLAMA_HOST = os.getenv('OLLAMA_HOST')
 VECTOR_MODEL = os.getenv('VECTOR_MODEL')
@@ -101,6 +103,36 @@ async def get_db_dependencies(client, cursor, code: str) -> list[tuple]:
 
 async def analyze_single_function(client, cursor, target_key: str, target_code: str, batch_changes: dict) -> str:
     """Один запрос к LLM: функция + контекст проекта + контекст других новых функций."""
+
+    # Attributes handling
+    file_path, name = target_key.rsplit("::", 1)
+    known_attrs, used_attrs = set(), set()
+
+    if "." in name:  # это метод класса
+        class_prefix = f"{file_path}::{name.split('.')[0]}."
+
+        # Что известно о классе: имена методов и всё, что присваивается через self.x = ...
+        for key, code in batch_changes.items():
+            if not key.startswith(class_prefix):
+                continue
+            known_attrs.add(key[len(class_prefix):])
+            try:
+                tree = ast.parse(textwrap.dedent(code))
+            except SyntaxError:
+                continue
+            for node in ast.walk(tree):
+                if (isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name)
+                        and node.value.id == "self" and isinstance(node.ctx, ast.Store)):
+                    known_attrs.add(node.attr)
+
+        # Что читает проверяемая функция через self.x
+        for node in ast.walk(ast.parse(textwrap.dedent(target_code))):
+            if (isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name)
+                    and node.value.id == "self" and isinstance(node.ctx, ast.Load)):
+                used_attrs.add(node.attr)
+
+    unknown_attrs = used_attrs - known_attrs
+
     cfg = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
     NUM_CTX = cfg["inference"]["num_ctx"]
 
@@ -114,6 +146,12 @@ async def analyze_single_function(client, cursor, target_key: str, target_code: 
     ```python
     {target_code}
     ```
+    
+    [CLASS METHODS AND ATTRIBUTES ASSIGNED IN OTHER METHODS]
+    {", ".join(sorted(known_attrs)) or "None"}
+    
+    [ATTRIBUTES READ IN THIS FUNCTION BUT NEVER ASSIGNED IN THE CLASS]
+    {", ".join(sorted(unknown_attrs)) or "None"}
 
     [EXISTING RELATED FUNCTIONS FROM REPO]
     {project_context}
@@ -127,13 +165,13 @@ async def analyze_single_function(client, cursor, target_key: str, target_code: 
        If a parameter is used in the body, assume that all callers were updated, unless the provided context shows a broken call.
     2. Names and Scope:
     - Local variables: Every variable read inside the function body MUST be assigned beforehand within the same function
-     or passed as a parameter. Using an undefined local variable (e.g. returning `parent_node` when 
-     only `parents` was assigned) is a strict FAIL (NameError).
-    - Class attributes (`self.`): If a `self.` attribute is not shown in the context, 
-    report it ONLY if a similarly spelled attribute exists elsewhere in the context 
-    (e.g. `self.animation_dir` vs `self.anim_dir_path`). Otherwise, do not report it, as it may be defined in `__init__`.
+    or passed as a parameter. Using an undefined local variable (e.g. returning `parent_node` when 
+    only `parents` was assigned) is a strict FAIL (NameError).
+    - Class attributes (`self.`): look at the last section above. Report an attribute from it ONLY if it is spelled
+    similarly to a name in the known list (e.g. `anim_dir_path` vs `animation_dir`).
+    Otherwise do not report it: it may be inherited from a base class.
     3. Return value: compare what the function returns with how the related functions use its result.
-       A different type or structure (list instead of dict, tuple instead of one value, None instead of a value) is a FAIL.
+    A different type or structure (list instead of dict, tuple instead of one value, None instead of a value) is a FAIL.
     4. Calls: calls to other functions must match their signatures in the provided context (number and names of arguments).
     Report only problems you can point to in the code above. Do not guess about code you cannot see. Ignore style and comments.
 
@@ -186,7 +224,7 @@ async def inference_pipeline(file_paths: list[tuple[str, str]]):
     batch_changes = {}
     for abs_path, rel_path in file_paths:
         batch_changes.update(extract_functions_from_file(abs_path, rel_path, TARGET_DIR))
-    logger.info(f"Found {len(batch_changes)} changed functions")
+    logger.info(f"Found {len(batch_changes)} functions")
 
     try:
         conn = psycopg2.connect(**DB_PARAMS)
