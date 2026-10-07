@@ -20,6 +20,8 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 def update_pipeline():
     updated_files = get_changed_files()
