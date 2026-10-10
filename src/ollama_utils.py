@@ -35,7 +35,6 @@ class OllamaGenerator:
         self.client = AsyncClient(host=self.host)
 
     async def generate_docstring(self, raw_code: str) -> str:
-
         prompt = f"""
         Analyze the following Python function:
         {raw_code}

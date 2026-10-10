@@ -24,6 +24,8 @@ logger = logging.getLogger(__name__)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 
+CFG = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
+
 OLLAMA_HOST = os.getenv('OLLAMA_HOST')
 VECTOR_MODEL = os.getenv('VECTOR_MODEL')
 ANALYSIS_MODEL = os.getenv('ANALYSIS_MODEL')
@@ -74,9 +76,8 @@ def find_called_functions_in_code(code: str) -> list[str]:
 
 async def get_db_dependencies(client, cursor, code: str) -> list[tuple]:
     """Ищет похожие функции в PostgreSQL. Возвращает [('file::func', code)]."""
-    cfg = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
-    MAX_COSINE_DISTANCE = float(cfg["inference"]["max_cosine_distance"])
-    TOP_K = int(cfg["inference"]["top_k"])
+    MAX_COSINE_DISTANCE = float(CFG["inference"]["max_cosine_distance"])
+    TOP_K = int(CFG["inference"]["top_k"])
 
     safe_code = code[:4000] # RAG limits
     response = await client.embeddings(model=VECTOR_MODEL, prompt=safe_code)
@@ -101,7 +102,7 @@ async def get_db_dependencies(client, cursor, code: str) -> list[tuple]:
             for file_path, func_name, raw_code, _ in rows]
 
 
-async def analyze_single_function(client, cursor, target_key: str, target_code: str, batch_changes: dict) -> str:
+async def analyze_function(client, cursor, target_key: str, target_code: str, batch_changes: dict, all_functions: dict) -> str:
     """Один запрос к LLM: функция + контекст проекта + контекст других новых функций."""
 
     # Attributes handling
@@ -112,7 +113,7 @@ async def analyze_single_function(client, cursor, target_key: str, target_code: 
         class_prefix = f"{file_path}::{name.split('.')[0]}."
 
         # Что известно о классе: имена методов и всё, что присваивается через self.x = ...
-        for key, code in batch_changes.items():
+        for key, code in all_functions.items():
             if not key.startswith(class_prefix):
                 continue
             known_attrs.add(key[len(class_prefix):])
@@ -219,12 +220,11 @@ async def inference_pipeline(file_paths: list[tuple[str, str]]):
     start = time.time()
     client = AsyncClient(host=OLLAMA_HOST)
 
-    # Индексация: достаём функции из изменённых файлов
-    logger.info(f"Indexing {len(file_paths)} files...")
-    batch_changes = {}
+    # 1. Индексация: достаём ВСЕ функции из затронутых файлов
+    logger.info(f"Extracting functions from {len(file_paths)} files...")
+    extracted_functions = {}
     for abs_path, rel_path in file_paths:
-        batch_changes.update(extract_functions_from_file(abs_path, rel_path, TARGET_DIR))
-    logger.info(f"Found {len(batch_changes)} functions")
+        extracted_functions.update(extract_functions_from_file(abs_path, rel_path, TARGET_DIR))
 
     try:
         conn = psycopg2.connect(**DB_PARAMS)
@@ -233,12 +233,33 @@ async def inference_pipeline(file_paths: list[tuple[str, str]]):
         return
     cursor = conn.cursor()
 
-    # Последовательно, чтобы не перегрузить локальную модель
+    logger.info("Comparing with database to skip unmodified functions...")
+    batch_changes = {}
+
+    for key, new_code in extracted_functions.items():
+        if "::" in key:
+            file_path, func_name = key.split("::", 1)
+        else:
+            file_path, func_name = key, ""  # Fallback
+
+        # Достаем старый код из базы
+        cursor.execute(
+            "SELECT raw_code FROM code_knowledge_base WHERE file_path = %s AND func_name = %s LIMIT 1",
+            (file_path, func_name)
+        )
+        db_result = cursor.fetchone()
+
+        # Checking DIFF
+        if not db_result or db_result[0].strip() != new_code.strip():
+            batch_changes[key] = new_code
+
+    logger.info(f"Found {len(batch_changes)} ACTUALLY modified/new functions for LLM analysis.")
+
     logger.info("Running LLM checks...")
     report = []
     for key, code in batch_changes.items():
         try:
-            result = await analyze_single_function(client, cursor, key, code, batch_changes)
+            result = await analyze_function(client, cursor, key, code, batch_changes, extracted_functions)
 
             # Filtering FAIL-only issues: проверяем текущий result, а не весь список report
             if "STATUS: PASS" in str(result).upper():

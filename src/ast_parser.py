@@ -91,8 +91,6 @@ def extract_ast_code_structure(source: str, file_path: str, project_root: str):
         logger.warning(f"File {file_path} is skipped: can't process AST.")
         return {"imports": [], "classes": {}, "functions": []}, {}
 
-    # file_content должен быть тем же текстом, по которому построено дерево,
-    # иначе get_source_segment вырежет не те строки (после 2to3 строки и колонки сдвигаются)
     extractor = CodeExtractor(
         project_root=project_root,
         file_content=used_source,
@@ -169,7 +167,7 @@ def merge_ast_and_docs(ast_functions_path, described_functions_path, rag_functio
 
 
 def run_2to3(source: str, file_path: str):
-    """Конвертирует код Python 2 в Python 3. Возвращает новый текст или None при ошибке."""
+    """Converts code from Python 2 to Python 3. Returns text or None"""
     with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as tmp:
         tmp.write(source)
         tmp_path = tmp.name
@@ -193,10 +191,10 @@ def run_2to3(source: str, file_path: str):
 def parse_python_source(source: str, file_path: str):
     """
     Возвращает (tree, source), где source — тот самый текст, по которому построено дерево.
-    1. Пытается распарсить код как Python 3.
-    2. При неудаче конвертирует через 2to3.
-    3. Если не вышло, разворачивает табы как в Python 2 (таб = 8 колонок) и пробует 2to3 снова.
-    Если ничего не помогло, возвращает (None, source).
+    1. Parses Python 3 code.
+    2. In failure, sends it to 2to3.
+    3. In failure, converts tabs to spaces Python 2 (1 tab = 8 spaces) and runs 2to3 again.
+    If nothing works, returns (None, source).
     """
     source = textwrap.dedent(source)
 
@@ -222,6 +220,5 @@ def parse_python_source(source: str, file_path: str):
 
 
 def parse_code_safely(source: str, file_path: str):
-    """Обёртка для старых вызовов: возвращает только дерево (или None)."""
     tree, _ = parse_python_source(source, file_path)
     return tree

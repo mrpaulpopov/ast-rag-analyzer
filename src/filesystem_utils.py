@@ -56,7 +56,6 @@ def get_changed_files():
 
 
 def read_file_safely(file_path: str) -> str:
-    """Пробует прочитать файл в разных кодировках. Если не выходит — заменяет битые символы."""
     encodings = ['utf-8', 'windows-1251', 'latin-1']
 
     for enc in encodings:
@@ -66,7 +65,6 @@ def read_file_safely(file_path: str) -> str:
         except UnicodeDecodeError:
             continue
 
-    # Если ни одна кодировка не подошла, читаем принудительно, заменяя битые символы на "?"
-    # Для построения AST-дерева битые буквы в комментариях или строках не имеют значения
+    # Fallback: replace broken symbols to ?
     with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
         return f.read()
