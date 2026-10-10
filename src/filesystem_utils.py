@@ -44,7 +44,7 @@ def save_last_run() -> None:
     META_DATA_PATH.write_text(json.dumps({"last_run_ts": time.time()}), encoding="utf-8")
 
 
-def get_changed_files():
+def get_changed_files() -> list[str]:
     target_dir = "/app/data" # docker-relative folder
 
     last_run_ts = load_last_run_ts()
@@ -68,3 +68,15 @@ def read_file_safely(file_path: str) -> str:
     # Fallback: replace broken symbols to ?
     with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
         return f.read()
+
+
+def process_incoming_files():
+    incoming_dir = "/app/incoming" # docker-relative folder
+    ignored_folders = {"venv", ".venv", "__pycache__", ".git"}
+
+    files_to_check = []
+    for abs_path in iter_python_files(incoming_dir, ignored_folders):
+        rel_path = os.path.relpath(abs_path, incoming_dir)
+        files_to_check.append((abs_path, rel_path))
+
+    return files_to_check

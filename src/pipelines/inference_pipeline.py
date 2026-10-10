@@ -11,7 +11,7 @@ import yaml
 from ollama import AsyncClient
 
 from src.ast_parser import extract_ast_code_structure
-from src.filesystem_utils import iter_python_files, read_file_safely
+from src.filesystem_utils import read_file_safely, process_incoming_files
 from src.paths import CONFIG_PATH
 
 logging.basicConfig(
@@ -65,17 +65,15 @@ def find_called_functions_in_code(code: str) -> list[str]:
     names = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Call):
-            if isinstance(node.func, ast.Name):         # foo()
+            if isinstance(node.func, ast.Name): # functions
                 names.append(node.func.id)
-            elif isinstance(node.func, ast.Attribute):  # self.foo()
+            elif isinstance(node.func, ast.Attribute):  # attributes
                 names.append(node.func.attr)
     return names
 
 
-
-
 async def get_db_dependencies(client, cursor, code: str) -> list[tuple]:
-    """Ищет похожие функции в PostgreSQL. Возвращает [('file::func', code)]."""
+    """Find similar functions in RAG PostgreSQL. Returns [('file::func', code)]."""
     MAX_COSINE_DISTANCE = float(CFG["inference"]["max_cosine_distance"])
     TOP_K = int(CFG["inference"]["top_k"])
 
@@ -103,7 +101,7 @@ async def get_db_dependencies(client, cursor, code: str) -> list[tuple]:
 
 
 async def analyze_function(client, cursor, target_key: str, target_code: str, batch_changes: dict, all_functions: dict) -> str:
-    """Один запрос к LLM: функция + контекст проекта + контекст других новых функций."""
+    """LLM query: function + project context + context of other new functions"""
 
     # Attributes handling
     file_path, name = target_key.rsplit("::", 1)
@@ -240,8 +238,7 @@ async def inference_pipeline(file_paths: list[tuple[str, str]]):
     for key, new_code in extracted_functions.items():
         file_path, func_name = key.split("::", 1) if "::" in key else (key, "")
 
-        # В БД путь может быть абсолютным (/app/data/...), а у нас относительный,
-        # поэтому сравниваем по окончанию пути
+        # comparing only the endings of strings
         cursor.execute(
             """
             SELECT raw_code FROM code_knowledge_base
@@ -266,11 +263,12 @@ async def inference_pipeline(file_paths: list[tuple[str, str]]):
 
     logger.info("Running LLM checks...")
     report = []
-    for key, code in batch_changes.items():
+    for i, (key, code) in enumerate(batch_changes.items(), 1):
+        logger.info(f"[{i}/{len(batch_changes)}] {key}")
         try:
             result = await analyze_function(client, cursor, key, code, batch_changes, extracted_functions)
 
-            # Filtering FAIL-only issues: проверяем текущий result, а не весь список report
+            # Filtering FAIL-only issues
             if "STATUS: PASS" in str(result).upper():
                 report.append(f"[{key}]\nSTATUS: PASS")
             else:
@@ -290,18 +288,6 @@ async def inference_pipeline(file_paths: list[tuple[str, str]]):
         print(res)
         print("-" * 50)
     logger.info(f"Inference completed in {time.time() - start:.4f}s")
-
-
-def process_incoming_files():
-    incoming_dir = "/app/incoming" # docker-relative folder
-    ignored_folders = {"venv", ".venv", "__pycache__", ".git"}
-
-    files_to_check = []
-    for abs_path in iter_python_files(incoming_dir, ignored_folders):
-        rel_path = os.path.relpath(abs_path, incoming_dir)
-        files_to_check.append((abs_path, rel_path))
-
-    return files_to_check
 
 
 if __name__ == "__main__":

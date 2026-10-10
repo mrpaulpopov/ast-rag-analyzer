@@ -19,9 +19,7 @@ from src.paths import (
 )
 
 logger = logging.getLogger(__name__)
-
 load_dotenv()
-
 IGNORED_DIRS = {'.venv', '__pycache__'}
 
 
