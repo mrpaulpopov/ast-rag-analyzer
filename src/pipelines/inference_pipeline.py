@@ -235,24 +235,33 @@ async def inference_pipeline(file_paths: list[tuple[str, str]]):
 
     logger.info("Comparing with database to skip unmodified functions...")
     batch_changes = {}
+    same = different = not_in_db = 0
 
     for key, new_code in extracted_functions.items():
-        if "::" in key:
-            file_path, func_name = key.split("::", 1)
-        else:
-            file_path, func_name = key, ""  # Fallback
+        file_path, func_name = key.split("::", 1) if "::" in key else (key, "")
 
-        # Достаем старый код из базы
+        # В БД путь может быть абсолютным (/app/data/...), а у нас относительный,
+        # поэтому сравниваем по окончанию пути
         cursor.execute(
-            "SELECT raw_code FROM code_knowledge_base WHERE file_path = %s AND func_name = %s LIMIT 1",
-            (file_path, func_name)
+            """
+            SELECT raw_code FROM code_knowledge_base
+            WHERE func_name = %s AND right(file_path, %s) = %s
+            LIMIT 1
+            """,
+            (func_name, len(file_path), file_path),
         )
         db_result = cursor.fetchone()
 
-        # Checking DIFF
-        if not db_result or db_result[0].strip() != new_code.strip():
+        if db_result is None:
+            not_in_db += 1
             batch_changes[key] = new_code
+        elif db_result[0].strip() != new_code.strip():
+            different += 1
+            batch_changes[key] = new_code
+        else:
+            same += 1
 
+    logger.info(f"Unchanged: {same}, changed: {different}, not found in DB: {not_in_db}")
     logger.info(f"Found {len(batch_changes)} ACTUALLY modified/new functions for LLM analysis.")
 
     logger.info("Running LLM checks...")
