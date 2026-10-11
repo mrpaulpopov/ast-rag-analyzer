@@ -7,15 +7,11 @@ import psycopg2
 from dotenv import load_dotenv
 from ollama import AsyncClient
 
-load_dotenv()
+from src.ast_parser import find_called_functions_in_code
+from src.pipelines.inference_pipeline import CFG, VECTOR_MODEL, logger
+from src.settings import DB_PARAMS
 
-DB_PARAMS = {
-    "dbname": os.getenv('POSTGRES_DB'),
-    "user": os.getenv('POSTGRES_USER'),
-    "password": os.getenv('POSTGRES_PASSWORD'),
-    "host": os.getenv('POSTGRES_HOST'),
-    "port": os.getenv('POSTGRES_PORT')
-}
+load_dotenv()
 
 OLLAMA_HOST = os.getenv('OLLAMA_HOST')
 VECTOR_MODEL = os.getenv('VECTOR_MODEL')
@@ -45,13 +41,13 @@ async def export_to_rag(raw_functions_path, rag_functions_path):
     logger.info("Starting generating vectors and sending to DB...")
 
     for file_path, file_info in rag_functions.items():
-        # Обработка обычных функций
+        # Functions
         for func_name, docstring in file_info.get("functions", {}).items():
              if not docstring:
                  continue
              await process_item(client, cursor, file_path, func_name, docstring, raw_functions)
 
-        # Обработка методов классов
+        # Methods
         for cls_name, cls_info in file_info.get("classes", {}).items():
             for method_name, docstring in cls_info.get("methods", {}).items():
                 if not docstring:
@@ -90,3 +86,85 @@ async def process_item(client, cursor, file_path, func_name, docstring, raw_func
 
     except Exception as e: # noqa: BLE001
          logger.error(f"Error during processing {unique_key}: {e}")
+
+
+async def get_db_dependencies(client, cursor, code: str) -> list[tuple]:
+    """Find similar functions in RAG PostgreSQL. Returns [('file::func', code)]."""
+    MAX_COSINE_DISTANCE = float(CFG["inference"]["max_cosine_distance"])
+    TOP_K = int(CFG["inference"]["top_k"])
+
+    safe_code = code[:4000] # RAG limits
+    response = await client.embeddings(model=VECTOR_MODEL, prompt=safe_code)
+    query_vector = str(response["embedding"])
+
+    cursor.execute(
+        """
+        SELECT file_path, func_name, raw_code, embedding <=> %s::vector AS distance
+        FROM code_knowledge_base
+        WHERE embedding <=> %s::vector < %s
+        ORDER BY distance
+        LIMIT %s
+        """,
+        (query_vector, query_vector, MAX_COSINE_DISTANCE, TOP_K),
+    )
+    rows = cursor.fetchall()
+
+    for file_path, func_name, _, distance in rows:
+        logger.debug(f"{file_path}::{func_name} distance={distance:.3f}")
+
+    return [(f"{file_path}::{func_name}", raw_code)
+            for file_path, func_name, raw_code, _ in rows]
+
+
+async def get_project_context(client, cursor, target_code: str, batch_changes: dict) -> str:
+    """Related existing functions from DB."""
+    db_context = ""
+
+    for key, code in await get_db_dependencies(client, cursor, target_code):
+        if key not in batch_changes:  # версии изменённых функций в БД устарели
+            db_context += f"--- FROM KNOWLEDGE BASE: {key} ---\n{code}\n\n"
+
+    return db_context or "No related functions found in the existing codebase."
+
+
+def get_batch_context(target_key: str, target_code: str, batch_changes: dict) -> str:
+    """Другие новые функции, которые вызывает целевая функция."""
+    batch_context = ""
+    for called_func in find_called_functions_in_code(target_code):
+        for key, code in batch_changes.items():
+            if key != target_key and key.endswith((f"::{called_func}", f".{called_func}")):
+                batch_context += f"--- SIBLING CHANGE: {key} ---\n{code}\n\n"
+
+    return batch_context or "None"
+
+def filter_modified_functions(cursor, extracted_functions: dict) -> dict:
+    logger.info("Comparing with database to skip unmodified functions...")
+    batch_changes = {}
+    same = different = not_in_db = 0
+
+    for key, new_code in extracted_functions.items():
+        file_path, func_name = key.split("::", 1) if "::" in key else (key, "")
+
+        # comparing only the endings of strings
+        cursor.execute(
+            """
+            SELECT raw_code FROM code_knowledge_base
+            WHERE func_name = %s AND right(file_path, %s) = %s
+            LIMIT 1
+            """,
+            (func_name, len(file_path), file_path),
+        )
+        db_result = cursor.fetchone()
+
+        if db_result is None:
+            not_in_db += 1
+            batch_changes[key] = new_code
+        elif db_result[0].strip() != new_code.strip():
+            different += 1
+            batch_changes[key] = new_code
+        else:
+            same += 1
+
+    logger.info(f"Unchanged: {same}, changed: {different}, not found in DB: {not_in_db}")
+    logger.info(f"Found {len(batch_changes)} ACTUALLY modified/new functions for LLM analysis.")
+    return batch_changes

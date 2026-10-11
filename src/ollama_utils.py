@@ -9,18 +9,12 @@ import yaml
 from dotenv import load_dotenv
 from ollama import AsyncClient
 
-from src.ast_parser import parse_code_safely
-from src.paths import CONFIG_PATH
+from src.ast_parser import parse_code_safely, extract_class_attributes
+from src.settings import CONFIG_PATH, PROMPT_PATH
+from src.pipelines.inference_pipeline import ANALYSIS_MODEL
+from src.rag import get_project_context, get_batch_context
 
 load_dotenv()
-
-DB_PARAMS = {
-    "dbname": os.getenv("POSTGRES_DB"),
-    "user": os.getenv("POSTGRES_USER"),
-    "password": os.getenv("POSTGRES_PASSWORD"),
-    "host": os.getenv("POSTGRES_HOST", "localhost"),
-    "port": os.getenv("POSTGRES_PORT", "5432")
-}
 
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 ANALYSIS_MODEL = os.getenv("ANALYSIS_MODEL")
@@ -94,3 +88,72 @@ async def create_docstrings(raw_functions_path, described_functions_path) -> dic
 
     logger.info(f"Docstrings were successfully created in {time.time() - start:.4f}s")
     return ollama_dict
+
+
+async def analyze_function(client, cursor, target_key: str, target_code: str, batch_changes: dict, all_functions: dict) -> str:
+    """LLM query: function + project context + context of other new functions"""
+
+    known_attrs, used_attrs = extract_class_attributes(target_key, target_code, all_functions)
+    unknown_attrs = used_attrs - known_attrs
+
+    cfg = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
+    NUM_CTX = cfg["inference"]["num_ctx"]
+
+    project_context = await get_project_context(client, cursor, target_code, batch_changes)
+    batch_context = get_batch_context(target_key, target_code, batch_changes)
+
+    prompt = f"""You are a strict automated AI code reviewer.
+    A developer modified the function `{target_key}`.
+
+    [TARGET FUNCTION CODE]
+    ```python
+    {target_code}
+    ```
+    
+    [CLASS METHODS AND ATTRIBUTES ASSIGNED IN OTHER METHODS]
+    {", ".join(sorted(known_attrs)) or "None"}
+    
+    [ATTRIBUTES READ IN THIS FUNCTION BUT NEVER ASSIGNED IN THE CLASS]
+    {", ".join(sorted(unknown_attrs)) or "None"}
+
+    [EXISTING RELATED FUNCTIONS FROM REPO]
+    {project_context}
+
+    [OTHER MODIFIED FUNCTIONS IN THIS COMMIT] (assume they are correct)
+    {batch_context}
+
+    TASK: Check the target function for bugs that would break the system. Go through these checks one by one:
+    1. Parameters: every parameter in the signature (except self, cls, *args, **kwargs) must be used in the function body.
+       An unused parameter is a FAIL: it is either left over by mistake or callers do not pass it.
+       If a parameter is used in the body, assume that all callers were updated, unless the provided context shows a broken call.
+    2. Names and Scope:
+    - Local variables: Every variable read inside the function body MUST be assigned beforehand within the same function
+    or passed as a parameter. Using an undefined local variable (e.g. returning `parent_node` when 
+    only `parents` was assigned) is a strict FAIL (NameError).
+    - Class attributes (`self.`): look at the last section above. Report an attribute from it ONLY if it is spelled
+    similarly to a name in the known list (e.g. `anim_dir_path` vs `animation_dir`).
+    Otherwise do not report it: it may be inherited from a base class.
+    3. Return value: compare what the function returns with how the related functions use its result.
+    A different type or structure (list instead of dict, tuple instead of one value, None instead of a value) is a FAIL.
+    4. Calls: calls to other functions must match their signatures in the provided context (number and names of arguments).
+    Report only problems you can point to in the code above. Do not guess about code you cannot see. Ignore style and comments.
+
+    Answer in exactly this format:
+    CHECKS: one short line for each of the 4 checks
+    STATUS: PASS or FAIL
+    ISSUE: if FAIL, quote the exact line and explain what is wrong; if PASS, write "No problems detected."
+    """
+
+    # DEBUG: Write prompt to file
+    with open(PROMPT_PATH, "w", encoding="utf-8") as f:
+        f.write(prompt)
+
+    response = await client.generate(model=ANALYSIS_MODEL,
+                                     prompt=prompt,
+                                     options={
+                                         "num_ctx": NUM_CTX,
+                                         "temperature": 0,
+                                         "seed": 42
+                                     }
+                                     )
+    return response["response"]
