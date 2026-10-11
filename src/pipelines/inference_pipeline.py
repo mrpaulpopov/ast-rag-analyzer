@@ -5,14 +5,14 @@ import sys
 import time
 
 import psycopg2
-import yaml
+from httpx import RequestError
 from ollama import AsyncClient
 
 from src.ast_parser import extract_functions_from_file
 from src.filesystem_utils import process_incoming_files
 from src.ollama_utils import analyze_function
 from src.rag import filter_modified_functions
-from src.settings import CONFIG_PATH, DB_PARAMS
+from src.settings import DB_PARAMS
 
 logging.basicConfig(
     level=logging.INFO,
@@ -23,8 +23,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
-
-CFG = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
 
 OLLAMA_HOST = os.getenv('OLLAMA_HOST')
 VECTOR_MODEL = os.getenv('VECTOR_MODEL')
@@ -63,7 +61,7 @@ async def inference_pipeline(file_paths: list[tuple[str, str]]):
             else:
                 report.append(f"[{key}]\n{result}")
 
-        except Exception as e:
+        except (psycopg2.Error, RequestError) as e:
             logger.error(f"Error during analyzing {key}: {e}")
             conn.rollback()
 
