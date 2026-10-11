@@ -3,15 +3,13 @@ import logging
 import sys
 import time
 
-import yaml
-
 from src.ast_parser import extract_project_ast_code_structure, merge_ast_and_docs
 from src.filesystem_utils import save_last_run
 from src.ollama_utils import create_docstrings
 from src.rag import export_to_rag
 from src.settings import (
     AST_FUNCTIONS_PATH,
-    CONFIG_PATH,
+    CFG,
     DESCRIBED_FUNCTIONS_PATH,
     RAG_FUNCTIONS_PATH,
     RAW_FUNCTIONS_PATH,
@@ -25,8 +23,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
-
-CFG = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
 
 
 def training_pipeline():

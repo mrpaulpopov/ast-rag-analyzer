@@ -1,18 +1,14 @@
-import ast
 import json
 import logging
 import os
 import time
 
-import psycopg2
-import yaml
 from dotenv import load_dotenv
 from ollama import AsyncClient
 
-from src.ast_parser import parse_code_safely, extract_class_attributes
-from src.settings import CONFIG_PATH, PROMPT_PATH
-from src.pipelines.inference_pipeline import ANALYSIS_MODEL
-from src.rag import get_project_context, get_batch_context
+from src.ast_parser import extract_class_attributes, parse_code_safely
+from src.rag import get_batch_context, get_project_context
+from src.settings import CFG, PROMPT_PATH
 
 load_dotenv()
 
@@ -96,8 +92,7 @@ async def analyze_function(client, cursor, target_key: str, target_code: str, ba
     known_attrs, used_attrs = extract_class_attributes(target_key, target_code, all_functions)
     unknown_attrs = used_attrs - known_attrs
 
-    cfg = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
-    NUM_CTX = cfg["inference"]["num_ctx"]
+    NUM_CTX = CFG["inference"]["num_ctx"]
 
     project_context = await get_project_context(client, cursor, target_code, batch_changes)
     batch_context = get_batch_context(target_key, target_code, batch_changes)

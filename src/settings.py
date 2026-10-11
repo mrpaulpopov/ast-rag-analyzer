@@ -1,6 +1,8 @@
 import os
 from pathlib import Path
 
+import yaml
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 CACHE_DIR = PROJECT_ROOT / "artifacts"
@@ -27,7 +29,7 @@ DB_PARAMS = {
     "host": os.getenv("POSTGRES_HOST", "localhost"),
     "port": os.getenv("POSTGRES_PORT", "5432")
 }
-
+CFG = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
 
 if __name__ == "__main__":
     print(PROJECT_ROOT) # debug

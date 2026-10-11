@@ -8,8 +8,7 @@ from dotenv import load_dotenv
 from ollama import AsyncClient
 
 from src.ast_parser import find_called_functions_in_code
-from src.pipelines.inference_pipeline import CFG, VECTOR_MODEL, logger
-from src.settings import DB_PARAMS
+from src.settings import CFG, DB_PARAMS
 
 load_dotenv()
 

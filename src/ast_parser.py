@@ -5,13 +5,13 @@ import os
 import subprocess
 import sys
 import tempfile
-import time
 import textwrap
+import time
 
 from dotenv import load_dotenv
 
 from src.filesystem_utils import iter_python_files, read_file_safely
-from src.paths import (
+from src.settings import (
     AST_FUNCTIONS_PATH,
     AST_FUNCTIONS_UPD_PATH,
     RAW_FUNCTIONS_PATH,
@@ -220,3 +220,68 @@ def parse_python_source(source: str, file_path: str):
 def parse_code_safely(source: str, file_path: str):
     tree, _ = parse_python_source(source, file_path)
     return tree
+
+
+def extract_functions_from_file(abs_path: str, rel_path: str, target_dir: str) -> dict:
+    """Возвращает {'file::func': 'код функции'}, используя правильный относительный путь."""
+    source = read_file_safely(abs_path)
+
+    try:
+        _, raw_functions = extract_ast_code_structure(source, rel_path, target_dir)
+    except SyntaxError as e:
+        logger.warning(f"Error in {rel_path}: {e}")
+        return {}
+
+    return raw_functions
+
+
+def find_called_functions_in_code(code: str) -> list[str]:
+    """Возвращает имена функций, которые вызываются внутри кода."""
+    try:
+        tree = ast.parse(textwrap.dedent(code))
+    except SyntaxError:
+        return []
+
+    names = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Name): # functions
+                names.append(node.func.id)
+            elif isinstance(node.func, ast.Attribute):  # attributes
+                names.append(node.func.attr)
+    return names
+
+def extract_class_attributes(target_key: str, target_code: str, all_functions: dict) -> tuple[set, set]:
+    """ Attributes handling. """
+    file_path, name = target_key.rsplit("::", 1)
+    known_attrs, used_attrs = set(), set()
+
+    if "." not in name: # if it's not a class
+        return known_attrs, used_attrs
+
+    class_prefix = f"{file_path}::{name.split('.')[0]}."
+
+    # Что известно о классе: имена методов и всё, что присваивается через self.x = ...
+    for key, code in all_functions.items():
+        if not key.startswith(class_prefix):
+            continue
+        known_attrs.add(key[len(class_prefix):])
+        try:
+            tree = ast.parse(textwrap.dedent(code))
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name)
+                    and node.value.id == "self" and isinstance(node.ctx, ast.Store)):
+                known_attrs.add(node.attr)
+
+    # Что читает проверяемая функция через self.x
+    try:
+        for node in ast.walk(ast.parse(textwrap.dedent(target_code))):
+            if (isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name)
+                    and node.value.id == "self" and isinstance(node.ctx, ast.Load)):
+                used_attrs.add(node.attr)
+    except SyntaxError:
+        pass
+
+    return known_attrs, used_attrs

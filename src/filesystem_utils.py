@@ -6,7 +6,7 @@ from collections.abc import Iterator
 
 from dotenv import load_dotenv
 
-from src.paths import META_DATA_PATH
+from src.settings import META_DATA_PATH
 
 logger = logging.getLogger(__name__)
 
