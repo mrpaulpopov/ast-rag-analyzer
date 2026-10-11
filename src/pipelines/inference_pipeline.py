@@ -11,8 +11,8 @@ from ollama import AsyncClient
 from src.ast_parser import extract_functions_from_file
 from src.filesystem_utils import process_incoming_files
 from src.ollama_utils import analyze_function
-from src.settings import CONFIG_PATH, DB_PARAMS
 from src.rag import filter_modified_functions
+from src.settings import CONFIG_PATH, DB_PARAMS
 
 logging.basicConfig(
     level=logging.INFO,
