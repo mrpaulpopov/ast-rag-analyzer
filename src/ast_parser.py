@@ -7,6 +7,7 @@ import sys
 import tempfile
 import textwrap
 import time
+from typing import Any
 
 from dotenv import load_dotenv
 
@@ -82,7 +83,7 @@ class CodeExtractor(ast.NodeVisitor):
         self.visit_FunctionDef(node)
 
 
-def extract_ast_code_structure(source: str, file_path: str, project_root: str):
+def extract_ast_code_structure(source: str, file_path: str, project_root: str) -> tuple[dict[str, Any], dict[str, str]]:
     tree, used_source = parse_python_source(source, file_path)
 
     if tree is None:
@@ -98,7 +99,7 @@ def extract_ast_code_structure(source: str, file_path: str, project_root: str):
     return extractor.data, extractor.raw_functions
 
 
-def extract_project_ast_code_structure(updated_files=None):
+def extract_project_ast_code_structure(updated_files=None) -> None:
     target_dir = "/app/data"  # docker-relative folder
 
     if updated_files is None:
@@ -130,7 +131,7 @@ def extract_project_ast_code_structure(updated_files=None):
     logger.info(f"AST Parsing completed in {time.time() - start:.4f}s")
 
 
-def merge_ast_and_docs(ast_functions_path, described_functions_path, rag_functions_path):
+def merge_ast_and_docs(ast_functions_path, described_functions_path, rag_functions_path) -> None:
     ast_functions = json.loads(ast_functions_path.read_text(encoding="utf-8"))
     docs = json.loads(described_functions_path.read_text(encoding="utf-8"))
 
@@ -164,7 +165,7 @@ def merge_ast_and_docs(ast_functions_path, described_functions_path, rag_functio
     )
 
 
-def run_2to3(source: str, file_path: str):
+def run_2to3(source: str, file_path: str) -> str | None:
     """Converts code from Python 2 to Python 3. Returns text or None"""
     with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as tmp:
         tmp.write(source)
@@ -186,9 +187,9 @@ def run_2to3(source: str, file_path: str):
             os.remove(tmp_path)
 
 
-def parse_python_source(source: str, file_path: str):
+def parse_python_source(source: str, file_path: str) -> tuple[ast.Module | None, str]:
     """
-    Возвращает (tree, source), где source — тот самый текст, по которому построено дерево.
+    Returns (tree, source).
     1. Parses Python 3 code.
     2. In failure, sends it to 2to3.
     3. In failure, converts tabs to spaces Python 2 (1 tab = 8 spaces) and runs 2to3 again.
@@ -217,7 +218,7 @@ def parse_python_source(source: str, file_path: str):
     return None, source
 
 
-def parse_code_safely(source: str, file_path: str):
+def parse_code_safely(source: str, file_path: str) -> ast.Module | None:
     tree, _ = parse_python_source(source, file_path)
     return tree
 
