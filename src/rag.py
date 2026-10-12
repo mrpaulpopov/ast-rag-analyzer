@@ -5,7 +5,7 @@ import os
 
 import psycopg2
 from dotenv import load_dotenv
-from ollama import AsyncClient
+from ollama import Client
 
 from src.ast_parser import find_called_functions_in_code
 from src.settings import CFG, DB_PARAMS
@@ -18,7 +18,7 @@ VECTOR_MODEL = os.getenv('VECTOR_MODEL')
 logger = logging.getLogger(__name__)
 
 
-async def export_to_rag(raw_functions_path, rag_functions_path):
+def export_to_rag(raw_functions_path, rag_functions_path):
     try:
         raw_functions = json.loads(raw_functions_path.read_text(encoding="utf-8"))
         rag_functions = json.loads(rag_functions_path.read_text(encoding="utf-8"))
@@ -28,7 +28,7 @@ async def export_to_rag(raw_functions_path, rag_functions_path):
          logger.error(f"Error during loading files: {e}")
          return
 
-    client = AsyncClient(host=OLLAMA_HOST)
+    client = Client(host=OLLAMA_HOST)
 
     try:
         conn = psycopg2.connect(**DB_PARAMS)
@@ -42,9 +42,9 @@ async def export_to_rag(raw_functions_path, rag_functions_path):
     for file_path, file_info in rag_functions.items():
         # Functions
         for func_name, docstring in file_info.get("functions", {}).items():
-             if not docstring:
-                 continue
-             await process_item(client, cursor, file_path, func_name, docstring, raw_functions)
+            if not docstring:
+                continue
+            process_item(client, cursor, file_path, func_name, docstring, raw_functions)
 
         # Methods
         for cls_name, cls_info in file_info.get("classes", {}).items():
@@ -52,7 +52,7 @@ async def export_to_rag(raw_functions_path, rag_functions_path):
                 if not docstring:
                     continue
                 func_fullname = f"{cls_name}.{method_name}"
-                await process_item(client, cursor, file_path, func_fullname, docstring, raw_functions)
+                process_item(client, cursor, file_path, func_fullname, docstring, raw_functions)
 
     conn.commit()
     cursor.close()
@@ -60,13 +60,13 @@ async def export_to_rag(raw_functions_path, rag_functions_path):
     logger.info("Successfully updated vector database.")
 
 
-async def process_item(client, cursor, file_path, func_name, docstring, raw_functions):
+def process_item(client, cursor, file_path, func_name, docstring, raw_functions):
     unique_key = f"{file_path}::{func_name}"
     raw_code = raw_functions.get(unique_key, "The code is not found")
 
     try:
         # generating vector
-        response = await client.embeddings(
+        response = client.embeddings(
             model=VECTOR_MODEL,
             prompt=docstring
         )
@@ -87,13 +87,13 @@ async def process_item(client, cursor, file_path, func_name, docstring, raw_func
          logger.error(f"Error during processing {unique_key}: {e}")
 
 
-async def get_db_dependencies(client, cursor, code: str) -> list[tuple]:
+def get_db_dependencies(client, cursor, code: str) -> list[tuple]:
     """Find similar functions in RAG PostgreSQL. Returns [('file::func', code)]."""
     MAX_COSINE_DISTANCE = float(CFG["inference"]["max_cosine_distance"])
     TOP_K = int(CFG["inference"]["top_k"])
 
     safe_code = code[:4000] # RAG limits
-    response = await client.embeddings(model=VECTOR_MODEL, prompt=safe_code)
+    response = client.embeddings(model=VECTOR_MODEL, prompt=safe_code)
     query_vector = str(response["embedding"])
 
     cursor.execute(
@@ -115,11 +115,11 @@ async def get_db_dependencies(client, cursor, code: str) -> list[tuple]:
             for file_path, func_name, raw_code, _ in rows]
 
 
-async def get_project_context(client, cursor, target_code: str, batch_changes: dict) -> str:
+def get_project_context(client, cursor, target_code: str, batch_changes: dict) -> str:
     """Related existing functions from DB."""
     db_context = ""
 
-    for key, code in await get_db_dependencies(client, cursor, target_code):
+    for key, code in get_db_dependencies(client, cursor, target_code):
         if key not in batch_changes:  # версии изменённых функций в БД устарели
             db_context += f"--- FROM KNOWLEDGE BASE: {key} ---\n{code}\n\n"
 

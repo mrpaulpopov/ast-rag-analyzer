@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import sys
 import time
@@ -38,7 +37,7 @@ def training_pipeline():
         logger.info('AST parsing was skipped')
 
     if CFG["training"]["create_docstrings"]:
-        asyncio.run(create_docstrings(RAW_FUNCTIONS_PATH, DESCRIBED_FUNCTIONS_PATH))
+        create_docstrings(RAW_FUNCTIONS_PATH, DESCRIBED_FUNCTIONS_PATH)
     else:
         logger.info('Docstrings creation was skipped')
 
@@ -48,7 +47,7 @@ def training_pipeline():
         logger.info('Merging json was skipped')
 
     if CFG["training"]["run_vector_indexing"]:
-        asyncio.run(export_to_rag(RAW_FUNCTIONS_PATH, RAG_FUNCTIONS_PATH))
+        export_to_rag(RAW_FUNCTIONS_PATH, RAG_FUNCTIONS_PATH)
     else:
         logger.info('Exporting to DB was skipped')
 

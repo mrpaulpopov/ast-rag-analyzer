@@ -4,7 +4,7 @@ import os
 import time
 
 from dotenv import load_dotenv
-from ollama import AsyncClient
+from ollama import Client
 
 from src.ast_parser import extract_class_attributes, parse_code_safely
 from src.rag import get_batch_context, get_project_context
@@ -22,9 +22,9 @@ class OllamaGenerator:
     def __init__(self, model_name=ANALYSIS_MODEL):
         self.model_name = model_name
         self.host = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-        self.client = AsyncClient(host=self.host)
+        self.client = Client(host=self.host)
 
-    async def generate_docstring(self, raw_code: str) -> str:
+    def generate_docstring(self, raw_code: str) -> str:
         prompt = f"""
         Analyze the following Python function:
         {raw_code}
@@ -39,7 +39,7 @@ class OllamaGenerator:
         """
 
         try:
-            response = await self.client.generate(
+            response = self.client.generate(
                 model=self.model_name,
                 prompt=prompt,
                 stream=False,
@@ -55,7 +55,7 @@ class OllamaGenerator:
             return "Error during connection to Ollama."
 
 
-async def create_docstrings(raw_functions_path, described_functions_path) -> dict:
+def create_docstrings(raw_functions_path, described_functions_path) -> dict:
     raw_functions = json.loads(raw_functions_path.read_text(encoding="utf-8"))
     for key, code in raw_functions.items():
         tree = parse_code_safely(source=code, file_path=key)
@@ -74,7 +74,7 @@ async def create_docstrings(raw_functions_path, described_functions_path) -> dic
     for key, func_code in raw_functions.items():
         print(f"[{current}/{total}] Generating docstring for: {key}")
 
-        description = await generator.generate_docstring(func_code)
+        description = generator.generate_docstring(func_code)
         ollama_dict[key] = description
 
         current += 1
@@ -86,7 +86,7 @@ async def create_docstrings(raw_functions_path, described_functions_path) -> dic
     return ollama_dict
 
 
-async def analyze_function(client, cursor, target_key: str, target_code: str, batch_changes: dict, all_functions: dict) -> str:
+def analyze_function(client, cursor, target_key: str, target_code: str, batch_changes: dict, all_functions: dict) -> str:
     """LLM query: function + project context + context of other new functions"""
 
     known_attrs, used_attrs = extract_class_attributes(target_key, target_code, all_functions)
@@ -94,7 +94,7 @@ async def analyze_function(client, cursor, target_key: str, target_code: str, ba
 
     NUM_CTX = CFG["inference"]["num_ctx"]
 
-    project_context = await get_project_context(client, cursor, target_code, batch_changes)
+    project_context = get_project_context(client, cursor, target_code, batch_changes)
     batch_context = get_batch_context(target_key, target_code, batch_changes)
 
     prompt = f"""You are a strict automated AI code reviewer.
@@ -143,12 +143,12 @@ async def analyze_function(client, cursor, target_key: str, target_code: str, ba
     with open(PROMPT_PATH, "w", encoding="utf-8") as f:
         f.write(prompt)
 
-    response = await client.generate(model=ANALYSIS_MODEL,
-                                     prompt=prompt,
-                                     options={
-                                         "num_ctx": NUM_CTX,
-                                         "temperature": 0,
-                                         "seed": 42
-                                     }
-                                     )
+    response = client.generate(model=ANALYSIS_MODEL,
+                               prompt=prompt,
+                               options={
+                                   "num_ctx": NUM_CTX,
+                                   "temperature": 0,
+                                   "seed": 42
+                               }
+                               )
     return response["response"]

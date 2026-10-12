@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import os
 import sys
@@ -6,7 +5,7 @@ import time
 
 import psycopg2
 from httpx import RequestError
-from ollama import AsyncClient
+from ollama import Client
 
 from src.ast_parser import extract_functions_from_file
 from src.filesystem_utils import process_incoming_files
@@ -29,10 +28,10 @@ VECTOR_MODEL = os.getenv('VECTOR_MODEL')
 ANALYSIS_MODEL = os.getenv('ANALYSIS_MODEL')
 TARGET_DIR = os.getenv('TARGET_DIR')
 
-async def inference_pipeline(file_paths: list[tuple[str, str]]):
+def inference_pipeline(file_paths: list[tuple[str, str]]):
     logger.info('Starting inference pipeline...')
     start = time.time()
-    client = AsyncClient(host=OLLAMA_HOST)
+    client = Client(host=OLLAMA_HOST)
 
     logger.info(f"Extracting functions from {len(file_paths)} files...")
     extracted_functions = {}
@@ -53,7 +52,7 @@ async def inference_pipeline(file_paths: list[tuple[str, str]]):
     for i, (key, code) in enumerate(batch_changes.items(), 1):
         logger.info(f"[{i}/{len(batch_changes)}] {key}")
         try:
-            result = await analyze_function(client, cursor, key, code, batch_changes, extracted_functions)
+            result = analyze_function(client, cursor, key, code, batch_changes, extracted_functions)
 
             # Filtering FAIL-only issues
             if "STATUS: PASS" in str(result).upper():
@@ -78,4 +77,4 @@ async def inference_pipeline(file_paths: list[tuple[str, str]]):
 
 
 if __name__ == "__main__":
-    asyncio.run(inference_pipeline(process_incoming_files()))
+    inference_pipeline(process_incoming_files())
