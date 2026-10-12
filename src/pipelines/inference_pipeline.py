@@ -26,7 +26,7 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 OLLAMA_HOST = os.getenv('OLLAMA_HOST')
 VECTOR_MODEL = os.getenv('VECTOR_MODEL')
 ANALYSIS_MODEL = os.getenv('ANALYSIS_MODEL')
-TARGET_DIR = os.getenv('TARGET_DIR')
+TARGET_DIR = os.getenv('TARGET_DIR') or ""
 
 def inference_pipeline(file_paths: list[tuple[str, str]]):
     logger.info('Starting inference pipeline...')

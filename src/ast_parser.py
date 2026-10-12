@@ -254,7 +254,8 @@ def find_called_functions_in_code(code: str) -> list[str]:
 def extract_class_attributes(target_key: str, target_code: str, all_functions: dict) -> tuple[set, set]:
     """ Attributes handling. """
     file_path, name = target_key.rsplit("::", 1)
-    known_attrs, used_attrs = set(), set()
+    known_attrs: set[str] = set()
+    used_attrs: set[str] = set()
 
     if "." not in name: # if it's not a class
         return known_attrs, used_attrs
