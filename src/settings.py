@@ -29,6 +29,8 @@ PROMPT_DIR.mkdir(parents=True, exist_ok=True)
 TRAINING_PROMPT_PATH = PROMPT_DIR / "training_prompt.txt"
 INFERENCE_PROMPT_PATH = PROMPT_DIR / "inference_prompt.txt"
 
+REPORT_PATH = CACHE_DIR / "impact_report.txt"
+
 DB_PARAMS = {
     "dbname": os.getenv("POSTGRES_DB"),
     "user": os.getenv("POSTGRES_USER"),

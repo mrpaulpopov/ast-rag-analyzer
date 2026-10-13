@@ -11,7 +11,7 @@ from src.ast_parser import extract_functions_from_file
 from src.filesystem_utils import process_incoming_files
 from src.ollama_utils import analyze_function
 from src.rag import filter_modified_functions
-from src.settings import DB_PARAMS
+from src.settings import DB_PARAMS, REPORT_PATH
 
 logging.basicConfig(
     level=logging.INFO,
@@ -67,12 +67,22 @@ def inference_pipeline(file_paths: list[tuple[str, str]]):
     cursor.close()
     conn.close()
 
-    print("\n" + "=" * 50)
-    print("IMPACT ANALYZER REPORT")
-    print("=" * 50)
+    report_lines = [
+        "=" * 50,
+        "IMPACT ANALYZER REPORT",
+        "=" * 50
+    ]
+
     for res in report:
-        print(res)
-        print("-" * 50)
+        report_lines.append(res)
+        report_lines.append("-" * 50)
+
+    final_report_text = "\n".join(report_lines)
+    with open(REPORT_PATH, "w", encoding="utf-8") as f:
+        f.write(final_report_text)
+
+    print("\n" + final_report_text)
+
     logger.info(f"Inference completed in {time.time() - start:.4f}s")
 
 
