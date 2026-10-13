@@ -2,6 +2,7 @@ import ast
 import json
 import logging
 import os
+import textwrap
 
 import psycopg2
 from dotenv import load_dotenv
@@ -23,7 +24,10 @@ def export_to_rag(raw_functions_path, rag_functions_path):
         raw_functions = json.loads(raw_functions_path.read_text(encoding="utf-8"))
         rag_functions = json.loads(rag_functions_path.read_text(encoding="utf-8"))
         for code in raw_functions.values():
-            ast.parse(code)
+            try:
+                ast.parse(textwrap.dedent(code))
+            except SyntaxError:
+                pass
     except FileNotFoundError as e:
          logger.error(f"Error during loading files: {e}")
          return
