@@ -9,7 +9,7 @@ A developer modified the function `{target_key}`.
 [CLASS METHODS AND ATTRIBUTES ASSIGNED IN OTHER METHODS]
 {known_attrs_str}
 
-[ATTRIBUTES READ IN THIS FUNCTION BUT NEVER ASSIGNED IN THE CLASS]
+[EXTERNAL OR INHERITED CLASS ATTRIBUTES]
 {unknown_attrs_str}
 
 [EXISTING RELATED FUNCTIONS FROM REPO]
@@ -19,19 +19,15 @@ A developer modified the function `{target_key}`.
 {batch_context}
 
 TASK: Check the target function for bugs that would break the system. Go through these checks one by one:
-1. Parameters: every parameter in the signature (except self, cls, *args, **kwargs) must be used in the function body.
-An unused parameter is a FAIL: it is either left over by mistake or callers do not pass it.
-If a parameter is used in the body, assume that all callers were updated, unless the provided context shows a broken call.
+CRITICAL SCOPE CONSTRAINT: You MUST evaluate ONLY the code explicitly provided under `[TARGET FUNCTION CODE]`. Do NOT analyze or report bugs for any code inside `[EXISTING RELATED FUNCTIONS FROM REPO]` or `[OTHER MODIFIED FUNCTIONS IN THIS COMMIT]`. Use those sections EXCLUSIVELY as read-only dictionaries to verify function signatures, return values, and class attributes.
+1. Parameters: IGNORE unused parameters. It is perfectly normal for UI callbacks, Qt slots, or overridden methods to have parameters that are not used in the body. Only report an issue if a newly added parameter breaks existing callers in the provided context.
 2. Names and Scope:
-- Local variables: Every variable read inside the function body MUST be assigned beforehand within the same function
-or passed as a parameter. Using an undefined local variable (e.g. returning `parent_node` when
-only `parents` was assigned) is a strict FAIL (NameError).
-- Class attributes (`self.`): look at the last section above. Report an attribute from it ONLY if it is spelled
-similarly to a name in the known list (e.g. `anim_dir_path` vs `animation_dir`).
-Otherwise do not report it: it may be inherited from a base class.
-3. Return value: compare what the function returns with how the related functions use its result.
-A different type or structure (list instead of dict, tuple instead of one value, None instead of a value) is a FAIL.
+* Local variables: This applies ONLY to local variables (no `self.` prefix). Every variable read inside the function body MUST be assigned beforehand within the same function or passed as a parameter. If a variable is assigned a value (e.g., rect = ..., font = ...), it is valid. DO NOT flag a variable as unassigned if it appears on the left side of an equals sign, or just because you don't see its contents being populated.
+EXCEPTIONS: Do NOT report NameErrors for ALL_CAPS variables (assume they are global constants) OR names used as object/module references calling external methods (e.g., os.path, json.load). Assume these are globally imported modules.
+* Class attributes (`self.`): Attributes accessed via `self.` (e.g., `self.debugSettingsFrame`) and methods called on `self` (e.g., `self.width()`) are assumed to be inherited or defined externally (e.g., from UI files or base classes like QWidget). DO NOT report them as missing or as errors UNLESS the name is a clear typo of an item explicitly listed in `[CLASS METHODS AND ATTRIBUTES ASSIGNED IN OTHER METHODS]` (e.g., `self.anim_dir_path` here vs `self.animation_dir` elsewhere).
+3. Return value: compare what the function returns with how the related functions use its result. A different type or structure (list instead of dict, tuple instead of one value, None instead of a value) is a FAIL.
 4. Calls: calls to other functions must match their signatures in the provided context (number and names of arguments).
+
 Report only problems you can point to in the code above. Do not guess about code you cannot see. Ignore style and comments.
 
 Answer in exactly this format:
