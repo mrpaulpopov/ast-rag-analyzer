@@ -49,10 +49,10 @@ def get_changed_files() -> list[str]:
 
     last_run_ts = load_last_run_ts()
 
-    for path in iter_modified_files(target_dir, last_run_ts, IGNORED_DIRS):
+    modified_files = list(iter_modified_files(target_dir, last_run_ts, IGNORED_DIRS))
+    for path in modified_files:
         logger.info(f"{path} was changed.")
-
-    return list(iter_modified_files(target_dir, last_run_ts, IGNORED_DIRS))
+    return modified_files
 
 
 def read_file_safely(file_path: str) -> str:
