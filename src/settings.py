@@ -10,7 +10,9 @@ CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 META_DATA_PATH = CACHE_DIR / "meta_data.json"
 CONFIG_PATH = PROJECT_ROOT / "config.yaml"
-PROMPT_PATH = CACHE_DIR / "inference_prompt.txt"
+
+DEBUG_PROMPTS_DIR = CACHE_DIR / "debug_prompts"
+DEBUG_PROMPTS_DIR.mkdir(parents=True, exist_ok=True)
 
 AST_FUNCTIONS_PATH = CACHE_DIR / "functions_ast.json"
 RAW_FUNCTIONS_PATH = CACHE_DIR / "functions_raw.json"
@@ -21,6 +23,11 @@ AST_FUNCTIONS_UPD_PATH = CACHE_DIR / "functions_ast_upd.json"
 RAW_FUNCTIONS_UPD_PATH = CACHE_DIR / "functions_raw_upd.json"
 DESCRIBED_FUNCTIONS_UPD_PATH = CACHE_DIR / "functions_described_upd.json"
 RAG_FUNCTIONS_UPD_PATH = CACHE_DIR / "functions_rag_upd.json"
+
+PROMPT_DIR = PROJECT_ROOT / "prompts"
+PROMPT_DIR.mkdir(parents=True, exist_ok=True)
+TRAINING_PROMPT_PATH = PROMPT_DIR / "training_prompt.txt"
+INFERENCE_PROMPT_PATH = PROMPT_DIR / "inference_prompt.txt"
 
 DB_PARAMS = {
     "dbname": os.getenv("POSTGRES_DB"),

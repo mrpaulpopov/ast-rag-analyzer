@@ -1,0 +1,10 @@
+Analyze the following Python function:
+{raw_code}
+
+Task: You are an expert Senior Python Developer. Write a concise technical description for the function above.
+
+CRITICAL RULES:
+1. Limit the description to exactly 1-2 sentences. STRICTLY NO BULLET POINTS.
+2. Use strictly English.
+3. State exactly what the function does, its core inputs, and its expected return value.
+4. Output ONLY the raw text description. NO conversational filler, NO greetings, NO breakdown of components.
