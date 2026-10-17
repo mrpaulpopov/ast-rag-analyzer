@@ -59,10 +59,28 @@ class CodeExtractor(ast.NodeVisitor):
         self.current_class = node.name
 
         self.data["classes"][node.name] = {
-            "methods": []
+            "methods": [],
+            "class_vars": []
         }
-        self.generic_visit(node)
 
+        class_vars = set()
+        for stmt in node.body:
+            if isinstance(stmt, ast.Assign):
+                for target in stmt.targets:
+                    if isinstance(target, ast.Name):
+                        class_vars.add(target.id)
+            elif isinstance(stmt, ast.AnnAssign):
+                if isinstance(stmt.target, ast.Name):
+                    class_vars.add(stmt.target.id)
+
+        if class_vars:
+            # Прячем переменные в raw_functions под спец. ключом для передачи дальше
+            unique_key = f'{self.file_path}::{node.name}.__class_vars__'
+            self.raw_functions[unique_key] = ",".join(class_vars)
+
+        self.data["classes"][node.name]["class_vars"] = list(class_vars)
+
+        self.generic_visit(node)
         self.current_class = prev_class
 
     def visit_FunctionDef(self, node):
@@ -223,17 +241,17 @@ def parse_code_safely(source: str, file_path: str) -> ast.Module | None:
     return tree
 
 
-def extract_functions_from_file(abs_path: str, rel_path: str, target_dir: str) -> dict:
-    """Возвращает {'file::func': 'код функции'}, используя правильный относительный путь."""
+def extract_functions_from_file(abs_path: str, rel_path: str, target_dir: str) -> tuple[dict, dict]:
+    """Возвращает (ast_data, raw_functions)."""
     source = read_file_safely(abs_path)
 
     try:
-        _, raw_functions = extract_ast_code_structure(source, rel_path, target_dir)
+        ast_data, raw_functions = extract_ast_code_structure(source, rel_path, target_dir)
     except SyntaxError as e:
         logger.warning(f"Error in {rel_path}: {e}")
-        return {}
+        return {}, {}
 
-    return raw_functions
+    return ast_data, raw_functions
 
 
 def find_called_functions_in_code(code: str) -> list[str]:
@@ -252,7 +270,8 @@ def find_called_functions_in_code(code: str) -> list[str]:
                 names.append(node.func.attr)
     return names
 
-def extract_class_attributes(target_key: str, target_code: str, all_functions: dict) -> tuple[set, set]:
+
+def extract_class_attributes(target_key: str, target_code: str, all_functions: dict, all_ast: dict) -> tuple[set, set]:
     """ Attributes handling. """
     file_path, name = target_key.rsplit("::", 1)
     known_attrs: set[str] = set()
@@ -261,9 +280,15 @@ def extract_class_attributes(target_key: str, target_code: str, all_functions: d
     if "." not in name: # if it's not a class
         return known_attrs, used_attrs
 
-    class_prefix = f"{file_path}::{name.split('.')[0]}."
+    cls_name = name.split('.')[0]
 
-    # Что известно о классе: имена методов и всё, что присваивается через self.x = ...
+    # 1. Достаем переменные уровня класса из AST
+    file_ast = all_ast.get(file_path, {})
+    cls_info = file_ast.get("classes", {}).get(cls_name, {})
+    known_attrs.update(cls_info.get("class_vars", []))
+
+    # 2. Достаем переменные из методов (self.x = ...)
+    class_prefix = f"{file_path}::{cls_name}."
     for key, code in all_functions.items():
         if not key.startswith(class_prefix):
             continue
@@ -277,7 +302,7 @@ def extract_class_attributes(target_key: str, target_code: str, all_functions: d
                     and node.value.id == "self" and isinstance(node.ctx, ast.Store)):
                 known_attrs.add(node.attr)
 
-    # Что читает проверяемая функция через self.x
+    # 3. Что читает проверяемая функция через self.x
     try:
         for node in ast.walk(ast.parse(textwrap.dedent(target_code))):
             if (isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name)
