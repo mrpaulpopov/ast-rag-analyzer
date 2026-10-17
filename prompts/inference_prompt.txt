@@ -9,7 +9,7 @@ A developer modified the function `{target_key}`.
 [CLASS METHODS AND ATTRIBUTES ASSIGNED IN OTHER METHODS]
 {known_attrs_str}
 
-[EXTERNAL OR INHERITED CLASS ATTRIBUTES]
+[UNVERIFIED ATTRIBUTES (POTENTIAL TYPOS)]
 {unknown_attrs_str}
 
 [EXISTING RELATED FUNCTIONS FROM REPO]
@@ -22,9 +22,9 @@ TASK: Check the target function for bugs that would break the system. Go through
 CRITICAL SCOPE CONSTRAINT: You MUST evaluate ONLY the code explicitly provided under `[TARGET FUNCTION CODE]`. Do NOT analyze or report bugs for any code inside `[EXISTING RELATED FUNCTIONS FROM REPO]` or `[OTHER MODIFIED FUNCTIONS IN THIS COMMIT]`. Use those sections EXCLUSIVELY as read-only dictionaries to verify function signatures, return values, and class attributes.
 1. Parameters: IGNORE unused parameters. It is perfectly normal for UI callbacks, Qt slots, or overridden methods to have parameters that are not used in the body. Only report an issue if a newly added parameter breaks existing callers in the provided context.
 2. Names and Scope:
-* Local variables: This applies ONLY to local variables (no `self.` prefix). Every variable read inside the function body MUST be assigned beforehand within the same function or passed as a parameter. If a variable is assigned a value (e.g., rect = ..., font = ...), it is valid. DO NOT flag a variable as unassigned if it appears on the left side of an equals sign, or just because you don't see its contents being populated.
+- Local variables: This applies ONLY to local variables (no `self.` prefix). Every variable read inside the function body MUST be assigned beforehand within the same function or passed as a parameter. If a variable is assigned a value (e.g., rect = ..., font = ...), it is valid. DO NOT flag a variable as unassigned if it appears on the left side of an equals sign, or just because you don't see its contents being populated.
 EXCEPTIONS: Do NOT report NameErrors for ALL_CAPS variables (assume they are global constants) OR names used as object/module references calling external methods (e.g., os.path, json.load). Assume these are globally imported modules.
-* Class attributes (`self.`): Attributes accessed via `self.` (e.g., `self.debugSettingsFrame`) and methods called on `self` (e.g., `self.width()`) are assumed to be inherited or defined externally (e.g., from UI files or base classes like QWidget). DO NOT report them as missing or as errors UNLESS the name is a clear typo of an item explicitly listed in `[CLASS METHODS AND ATTRIBUTES ASSIGNED IN OTHER METHODS]` (e.g., `self.anim_dir_path` here vs `self.animation_dir` elsewhere).
+- Class attributes (`self.`): Pay EXTREMELY close attention to the attributes listed under `[UNVERIFIED ATTRIBUTES (POTENTIAL TYPOS)]`. These attributes are called in the target function but are NOT defined anywhere else in the class. You MUST cross-reference them with `[CLASS METHODS AND ATTRIBUTES ASSIGNED IN OTHER METHODS]`. If an unverified attribute is similar to a known one (e.g., `tpl_path` vs `path`, or `anim_dir_path` vs `animation_dir`), it is a typo and a FATAL error. STATUS: FAIL. If it is completely unique, assume it might be inherited and ignore it.
 3. Return value:
 - Step 1: Extract and quote EVERY SINGLE `return` statement found in the [TARGET FUNCTION CODE] (including those inside `if`, `except`, and `try` blocks).
 - Step 2: Compare EACH extracted return statement against the expected format in [EXISTING RELATED FUNCTIONS FROM REPO].
