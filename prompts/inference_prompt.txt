@@ -30,7 +30,14 @@ EXCEPTIONS: Do NOT report NameErrors for ALL_CAPS variables (assume they are glo
 
 Report only problems you can point to in the code above. Do not guess about code you cannot see. Ignore style and comments.
 
-Answer in exactly this format:
-CHECKS: one short line for each of the 4 checks
-STATUS: PASS or FAIL
-ISSUE: if FAIL, quote the exact line and explain what is wrong; if PASS, write "No problems detected."
+Answer EXACTLY in this format, replacing the bracketed placeholders with your analysis:
+
+[REASONING]
+1. Parameters: <state if new parameters break callers>
+2. Names and Scope: <verify all local variables are declared>
+3. Return value: <verify return types match context>
+4. Calls: <verify call signatures match context>
+
+[VERDICT]
+STATUS: <strictly write PASS or FAIL>
+ISSUE: <if FAIL, quote the exact line and explain what is wrong. If PASS, write "None">
