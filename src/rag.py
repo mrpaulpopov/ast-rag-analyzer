@@ -120,13 +120,21 @@ def get_db_dependencies(client, cursor, code: str) -> list[tuple]:
             for file_path, func_name, raw_code, _ in rows]
 
 
-def get_project_context(client, cursor, target_code: str, batch_changes: dict) -> str:
+def get_project_context(client, cursor, target_key: str, target_code: str, batch_changes: dict) -> str:
     """Related existing functions from DB."""
     db_context = ""
 
     for key, code in get_db_dependencies(client, cursor, target_code):
-        if key not in batch_changes:  # версии изменённых функций в БД устарели
-            db_context += f"--- FROM KNOWLEDGE BASE: {key} ---\n{code}\n\n"
+        # 1. Жестко отсекаем старую версию ТЕКУЩЕЙ функции (невзирая на префиксы /app/data/)
+        if key.endswith(target_key) or target_key.endswith(key):
+            continue
+
+        # 2. Отсекаем старые версии ДРУГИХ измененных функций из этого же батча
+        is_in_batch = any(key.endswith(b_key) or b_key.endswith(key) for b_key in batch_changes.keys())
+        if is_in_batch:
+            continue
+
+        db_context += f"--- FROM KNOWLEDGE BASE: {key} ---\n{code}\n\n"
 
     return db_context or "No related functions found in the existing codebase."
 

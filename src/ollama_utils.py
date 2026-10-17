@@ -85,7 +85,7 @@ def analyze_function(client, cursor, target_key: str, target_code: str, batch_ch
 
     NUM_CTX = CFG["inference"]["num_ctx"]
 
-    project_context = get_project_context(client, cursor, target_code, batch_changes)
+    project_context = get_project_context(client, cursor, target_key, target_code, batch_changes)
     batch_context = get_batch_context(target_key, target_code, batch_changes)
     known_attrs_str = ", ".join(sorted(known_attrs)) or "None"
     unknown_attrs_str = ", ".join(sorted(unknown_attrs)) or "None"
