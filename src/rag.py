@@ -1,4 +1,5 @@
 import ast
+import difflib
 import json
 import logging
 import os
@@ -140,6 +141,17 @@ def get_batch_context(target_key: str, target_code: str, batch_changes: dict) ->
 
     return batch_context or "None"
 
+def normalize_code(code: str) -> str:
+    """Очищает код от невидимого мусора форматирования для честного сравнения."""
+    if not code:
+        return ""
+    # 1. Унифицируем переносы строк (убиваем \r)
+    code = code.replace('\r\n', '\n')
+    # 2. Убираем висячие пробелы в конце КАЖДОЙ строки по отдельности
+    lines = [line.rstrip() for line in code.split('\n')]
+    # 3. Склеиваем обратно и убираем пустые строки сверху и снизу
+    return '\n'.join(lines).strip()
+
 def filter_modified_functions(cursor, extracted_functions: dict) -> dict:
     logger.info("Comparing with database to skip unmodified functions...")
     batch_changes = {}
@@ -162,11 +174,17 @@ def filter_modified_functions(cursor, extracted_functions: dict) -> dict:
         if db_result is None:
             not_in_db += 1
             batch_changes[key] = new_code
-        elif db_result[0].strip() != new_code.strip():
-            different += 1
-            batch_changes[key] = new_code
         else:
-            same += 1
+            # Сравниваем НОРМАЛИЗОВАННЫЙ код
+            db_code = normalize_code(db_result[0])
+            incoming_code = normalize_code(new_code)
+
+            if db_code != incoming_code:
+                different += 1
+                batch_changes[key] = new_code
+
+            else:
+                same += 1
 
     logger.info(f"Unchanged: {same}, changed: {different}, not found in DB: {not_in_db}")
     logger.info(f"Found {len(batch_changes)} ACTUALLY modified/new functions for LLM analysis.")

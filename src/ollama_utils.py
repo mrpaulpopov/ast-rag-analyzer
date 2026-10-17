@@ -77,10 +77,10 @@ def create_docstrings(raw_functions_path, described_functions_path) -> dict:
     return ollama_dict
 
 
-def analyze_function(client, cursor, target_key: str, target_code: str, batch_changes: dict, all_functions: dict) -> str:
+def analyze_function(client, cursor, target_key: str, target_code: str, batch_changes: dict, all_functions: dict, all_ast: dict) -> str:
     """LLM query: function + project context + context of other new functions"""
 
-    known_attrs, used_attrs = extract_class_attributes(target_key, target_code, all_functions)
+    known_attrs, used_attrs = extract_class_attributes(target_key, target_code, all_functions, all_ast)
     unknown_attrs = used_attrs - known_attrs
 
     NUM_CTX = CFG["inference"]["num_ctx"]
