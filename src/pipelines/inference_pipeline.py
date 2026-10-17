@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 import sys
 import time
 
@@ -35,8 +36,15 @@ def inference_pipeline(file_paths: list[tuple[str, str]]):
 
     logger.info(f"Extracting functions from {len(file_paths)} files...")
     extracted_functions = {}
+    extracted_ast = {}
+
     for abs_path, rel_path in file_paths:
-        extracted_functions.update(extract_functions_from_file(abs_path, rel_path, TARGET_DIR))
+        ast_data, raw_funcs = extract_functions_from_file(abs_path, rel_path, TARGET_DIR)
+
+        if ast_data:
+            extracted_ast[rel_path] = ast_data
+
+        extracted_functions.update(raw_funcs)
 
     try:
         conn = psycopg2.connect(**DB_PARAMS)
@@ -52,10 +60,10 @@ def inference_pipeline(file_paths: list[tuple[str, str]]):
     for i, (key, code) in enumerate(batch_changes.items(), 1):
         logger.info(f"[{i}/{len(batch_changes)}] {key}")
         try:
-            result = analyze_function(client, cursor, key, code, batch_changes, extracted_functions)
+            result = analyze_function(client, cursor, key, code, batch_changes, extracted_functions, extracted_ast)
 
             # Filtering FAIL-only issues
-            if "STATUS: PASS" in str(result).upper():
+            if re.search(r"^STATUS:\s*PASS", str(result).upper(), re.MULTILINE):
                 report.append(f"[{key}]\nSTATUS: PASS")
             else:
                 report.append(f"[{key}]\n{result}")
