@@ -20,9 +20,18 @@ TASK: Audit the [TARGET FUNCTION CODE] strictly against the provided context. Do
 Answer EXACTLY in this format:
 
 [REASONING]
-1. Scope: Verify local variables are assigned before use (ignore ALL_CAPS and global modules). Check [UNVERIFIED ATTRIBUTES] - if any is a clear typo of a known attribute, write FAIL.
-2. Returns: Extract EVERY `return` statement. Compare return types and element counts with the expected format in [EXISTING RELATED FUNCTIONS FROM REPO]. If mismatch, write FAIL.
-3. Calls: Extract every function call. Compare the EXACT arguments passed (including kwargs) against the context signatures. If an unexpected argument is passed, write FAIL.
+1. Scope:
+- Verify local variables are assigned before use (ignore ALL_CAPS and global modules).
+- Quote EVERY item from [UNVERIFIED ATTRIBUTES].
+- Cross-reference them with [CLASS METHODS AND ATTRIBUTES ASSIGNED IN OTHER METHODS]. If an unverified attribute shares a core word/substring with a known attribute, it is a fatal typo. You MUST write FAIL.
+2. Returns:
+- Quote EVERY SINGLE `return` statement from the target function. You MUST explicitly check inside `try`, `except`, and `if` blocks. Do not skip any.
+- Find and quote the EXACT line in [EXISTING RELATED FUNCTIONS FROM REPO] where this function is called (to see how many variables it unpacks).
+- If ANY extracted return statement yields a different number of elements than the caller expects, write FAIL.
+3. Calls:
+- Find and quote ALL function calls from the target code that match functions in [EXISTING RELATED FUNCTIONS FROM REPO]. Do NOT stop after finding just one.
+- Quote the EXACT function signature from the context for EACH matched call.
+- If the target code passes an argument (like kwargs or extra variables) that does NOT exist in the quoted signature, write FAIL.
 
 [VERDICT]
 STATUS: <PASS or FAIL>
