@@ -26,8 +26,10 @@ Answer EXACTLY in this format:
 - Cross-reference them with [CLASS METHODS AND ATTRIBUTES ASSIGNED IN OTHER METHODS]. If an unverified attribute shares a core word/substring with a known attribute, it is a fatal typo. You MUST write FAIL.
 2. Returns:
 - Quote EVERY SINGLE `return` statement from the target function. You MUST explicitly check inside `try`, `except`, and `if` blocks. Do not skip any.
-- Find and quote the EXACT line in [EXISTING RELATED FUNCTIONS FROM REPO] where this function is called (to see how many variables it unpacks).
-- If ANY extracted return statement yields a different number of elements than the caller expects, write FAIL.
+- For EACH quoted return statement, explicitly write the COUNT of returned elements (e.g., "1 element" or "2 elements").
+- Find and quote the EXACT line in [EXISTING RELATED FUNCTIONS FROM REPO] where this function is called.
+- Explicitly write the COUNT of variables the caller unpacks.
+- Compare the counts. If ANY return statement count does NOT exactly match the caller's count, write FAIL.
 3. Calls:
 - Find and quote ALL function calls from the target code that match functions in [EXISTING RELATED FUNCTIONS FROM REPO]. Do NOT stop after finding just one.
 - Quote the EXACT function signature from the context for EACH matched call.
