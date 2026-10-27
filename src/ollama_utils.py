@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 class OllamaGenerator:
+    """A generator that maintains a connection to the Ollama"""
     def __init__(self, model_name=ANALYSIS_MODEL):
         self.model_name = model_name
         self.host = os.getenv("OLLAMA_HOST", "http://localhost:11434")
