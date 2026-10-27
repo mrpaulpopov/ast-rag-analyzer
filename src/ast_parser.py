@@ -2,11 +2,10 @@ import ast
 import json
 import logging
 import os
-import subprocess
-import sys
-import tempfile
+import re
 import textwrap
 import time
+from lib2to3.refactor import get_fixers_from_package, RefactoringTool
 from typing import Any
 
 from dotenv import load_dotenv
@@ -22,6 +21,11 @@ from src.settings import (
 logger = logging.getLogger(__name__)
 load_dotenv()
 IGNORED_DIRS = {'.venv', '__pycache__'}
+
+logging.getLogger("lib2to3").setLevel(logging.WARNING)
+
+_FIXERS = get_fixers_from_package("lib2to3.fixes")
+_TOOL = RefactoringTool(_FIXERS)
 
 
 class CodeExtractor(ast.NodeVisitor):
@@ -43,14 +47,20 @@ class CodeExtractor(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node):
-        if node.module:
-            rel_path = node.module.replace('.', '/')
+        module_name = node.module
+
+        if module_name:
+            rel_path = module_name.replace('.', '/')
             possible_file = os.path.join(self.project_root, f'{rel_path}.py')
 
             if os.path.exists(possible_file):
                 self.data["imports"].append(f'{rel_path}.py')
             else:
-                self.data["imports"].append(node.module)
+                self.data["imports"].append(module_name)
+
+        elif node.level is not None and node.level > 0:
+            for alias in node.names:
+                self.data["imports"].append(alias.name)
 
         self.generic_visit(node)
 
@@ -72,11 +82,6 @@ class CodeExtractor(ast.NodeVisitor):
             elif isinstance(stmt, ast.AnnAssign):
                 if isinstance(stmt.target, ast.Name):
                     class_vars.add(stmt.target.id)
-
-        if class_vars:
-            # Прячем переменные в raw_functions под спец. ключом для передачи дальше
-            unique_key = f'{self.file_path}::{node.name}.__class_vars__'
-            self.raw_functions[unique_key] = ",".join(class_vars)
 
         self.data["classes"][node.name]["class_vars"] = list(class_vars)
 
@@ -153,6 +158,13 @@ def merge_ast_and_docs(ast_functions_path, described_functions_path, rag_functio
     ast_functions = json.loads(ast_functions_path.read_text(encoding="utf-8"))
     docs = json.loads(described_functions_path.read_text(encoding="utf-8"))
 
+    # Allocating empty space in dictionary:
+    # For each file,
+    #   replace "functions": ["A", "B"] to "functions": {"A": None, "B": None}
+    #   And for each "classes",
+    #       replace "methods": ["A", "B"] to "methods": {"A": None, "B": None}
+
+
     for file_path, file_info in ast_functions.items():
         funcs_list = file_info.get("functions", [])
         file_info["functions"] = {func_name: None for func_name in funcs_list}
@@ -161,6 +173,8 @@ def merge_ast_and_docs(ast_functions_path, described_functions_path, rag_functio
             methods_list = cls_info.get("methods", [])
             cls_info["methods"] = {method_name: None for method_name in methods_list}
 
+    # Split unique_key by ::
+    # and apply docstring to each function and method.
     for unique_key, docstring in docs.items():
         try:
             file_path, func_fullname = unique_key.split("::")
@@ -183,57 +197,47 @@ def merge_ast_and_docs(ast_functions_path, described_functions_path, rag_functio
     )
 
 
-def run_2to3(source: str, file_path: str) -> str | None:
-    """Converts code from Python 2 to Python 3. Returns text or None"""
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as tmp:
-        tmp.write(source)
-        tmp_path = tmp.name
-
+def run_2to3(source_file: str, file_path: str) -> str | None:
+    """Converts code from Python 2 to Python 3 in memory. Returns text or None"""
     try:
-        subprocess.run(
-            [sys.executable, "-W", "ignore", "-m", "lib2to3", "-w", "-n", "--no-diffs", tmp_path],
-            capture_output=True, check=True, text=True,
-        )
-        with open(tmp_path, 'r', encoding='utf-8') as f:
-            return f.read()
-    except subprocess.CalledProcessError as e:
-        last_line = e.stderr.strip().splitlines()[-1] if e.stderr and e.stderr.strip() else ""
-        logger.info(f"2to3 failed for {file_path}: {last_line}")
+        tree = _TOOL.refactor_string(source_file + "\n", file_path)
+        refactored_code = str(tree)
+        refactored_code = re.sub(r'\basync\b', 'is_async', refactored_code)
+        return refactored_code
+    except Exception as e:
+        logger.info(f"2to3 failed for {file_path}: {e}")
         return None
-    finally:
-        if os.path.exists(tmp_path):
-            os.remove(tmp_path)
 
 
-def parse_python_source(source: str, file_path: str) -> tuple[ast.Module | None, str]:
+def parse_python_source(source_file: str, file_path: str) -> tuple[ast.Module | None, str]:
     """
     Returns (tree, source).
-    1. Parses Python 3 code.
-    2. In failure, sends it to 2to3.
-    3. In failure, converts tabs to spaces Python 2 (1 tab = 8 spaces) and runs 2to3 again.
+    1. Ast-parsing Python 3 code.
+    2. In failure, sends it to 2to3 and converts tabs to spaces Python 2 (1 tab = 8 spaces) and runs 2to3 again.
     If nothing works, returns (None, source).
     """
-    source = textwrap.dedent(source)
+    source_file = textwrap.dedent(source_file)
 
+    # Attempt 1
     try:
-        return ast.parse(source), source
+        return ast.parse(source_file), source_file
     except SyntaxError:
         pass
 
-    for candidate in (source, source.expandtabs(8)):
+    # Attempt 2
+    for candidate in (source_file, source_file.expandtabs(8)):
         converted = run_2to3(candidate, file_path)
         if converted is None:
             continue
-
-        converted = converted.replace('async=', 'is_async=').replace('async =', 'is_async =')
 
         try:
             return ast.parse(converted), converted
         except SyntaxError as e:
             logger.info(f"Converted code of {file_path} still doesn't parse: {e}")
 
+    # Fallback 3
     logger.error(f"Fatal parse error in {file_path}: can't convert to Python 3")
-    return None, source
+    return None, source_file
 
 
 def parse_code_safely(source: str, file_path: str) -> ast.Module | None:
@@ -242,7 +246,7 @@ def parse_code_safely(source: str, file_path: str) -> ast.Module | None:
 
 
 def extract_functions_from_file(abs_path: str, rel_path: str, target_dir: str) -> tuple[dict, dict]:
-    """Возвращает (ast_data, raw_functions)."""
+    """Returns (ast_data, raw_functions)."""
     source = read_file_safely(abs_path)
 
     try:
@@ -264,7 +268,7 @@ def find_called_functions_in_code(code: str) -> list[str]:
     names = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Call):
-            if isinstance(node.func, ast.Name): # functions
+            if isinstance(node.func, ast.Name):  # functions
                 names.append(node.func.id)
             elif isinstance(node.func, ast.Attribute):  # attributes
                 names.append(node.func.attr)
@@ -277,7 +281,7 @@ def extract_class_attributes(target_key: str, target_code: str, all_functions: d
     known_attrs: set[str] = set()
     used_attrs: set[str] = set()
 
-    if "." not in name: # if it's not a class
+    if "." not in name:  # if it's not a class
         return known_attrs, used_attrs
 
     cls_name = name.split('.')[0]
