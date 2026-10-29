@@ -1,4 +1,12 @@
 
+## Data Flow Diagrams
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/DFD_Dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="docs/DFD_Light.svg">
+  <img alt="Training Data Flow Diagram" src="docs/DFD_Light.svg" width="100%">
+</picture>
+
 ### Базовый запуск (с GPU)
 ```
 docker-compose up -d
@@ -14,6 +22,9 @@ docker-compose run --rm --build app python src/pipelines/training_pipeline.py
 docker-compose run --rm --build app python src/pipelines/update_pipeline.py
 docker-compose run --rm --build app python src/pipelines/inference_pipeline.py
 ```
+
+docker-compose down -v
+localhost:8080
 
 ## Пайплайн обучения базы знаний (`training_pipeline`)
 Этот процесс запускается для первичной или полной индексации всего проекта, чтобы нейросеть получила "память" (векторную базу).
@@ -40,3 +51,11 @@ docker-compose run --rm --build app python src/pipelines/inference_pipeline.py
    - `get_batch_context()` вызывает `find_called_functions_in_code()`, чтобы проверить, не вызывает ли проверяемая функция другие функции из этого же коммита.
 5. **Генерация вердикта (LLM):** `analyze_function()` собирает целевой код, контекст базы, контекст коммита и атрибуты в один гигантский промпт и отправляет его в `client.generate()` (флагманскую модель анализатора).
 6. **Финальный отчет:** Пайплайн получает ответы, фильтрует их, форматирует и выводит в консоль итоговый `IMPACT ANALYZER REPORT`.
+
+
+Где проект будет блистать: Отлов опечаток в переменных, потерянные return в блоках исключений, передача лишних аргументов (kwargs) и несовпадение базовых сигнатур. Заземление через принудительное цитирование заставит модель ловить эти баги практически со 100% вероятностью, если нужный контекст есть в промпте.
+Слепота к бизнес-логике: Промпт заточен на структурную целостность. Если разработчик напишет if x > 10 вместо if x >= 10, или ошибется в математической формуле, модель этого не заметит.
+
+Зависимость от RAG: Это самое слабое место в продакшене. Если векторный поиск в PostgreSQL не найдет функцию, которая вызывает модифицированный код, и не подкинет ее в [EXISTING RELATED FUNCTIONS FROM REPO], модели просто не с чем будет сравнивать return и она пропустит баг.
+
+Размытие внимания на больших коммитах: Если в [TARGET FUNCTION CODE] прилетит функция на 300 строк со сложным ветвлением, 14-миллиардная модель снова начнет "терять" инструкции из-за перегрузки контекстного окна.
