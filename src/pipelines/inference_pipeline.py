@@ -56,17 +56,17 @@ def inference_pipeline(file_paths: list[tuple[str, str]]):
     batch_changes = filter_modified_functions(cursor, extracted_functions)
 
     logger.info("Running LLM checks...")
-    report = []
+    results_data = []
+
     for i, (key, code) in enumerate(batch_changes.items(), 1):
         logger.info(f"[{i}/{len(batch_changes)}] {key}")
         try:
             result = analyze_function(client, cursor, key, code, batch_changes, extracted_functions, extracted_ast)
 
-            # Filtering FAIL-only issues
-            if re.search(r"^STATUS:\s*PASS", str(result).upper(), re.MULTILINE):
-                report.append(f"[{key}]\nSTATUS: PASS")
-            else:
-                report.append(f"[{key}]\n{result}")
+            match = re.search(r'["\']verdict_status["\']\s*:\s*["\'](PASS|FAIL)["\']', str(result), re.IGNORECASE)
+            status = match.group(1).upper() if match else "UNKNOWN"
+
+            results_data.append((key, result, status))
 
         except (psycopg2.Error, RequestError) as e:
             logger.error(f"Error during analyzing {key}: {e}")
@@ -75,21 +75,26 @@ def inference_pipeline(file_paths: list[tuple[str, str]]):
     cursor.close()
     conn.close()
 
-    report_lines = [
-        "=" * 50,
-        "IMPACT ANALYZER REPORT",
-        "=" * 50
-    ]
+    report_lines = []
 
-    for res in report:
-        report_lines.append(res)
+    for key, result, _ in results_data:
+        report_lines.append(f"[{key}]\n{result}")
         report_lines.append("-" * 50)
+
+    report_lines.extend([
+        "=" * 50,
+        "IMPACT ANALYZER REPORT (SUMMARY)",
+        "=" * 50
+    ])
+
+    for key, _, status in results_data:
+        report_lines.append(f"{status} — [{key}]")
 
     final_report_text = "\n".join(report_lines)
     with open(REPORT_PATH, "w", encoding="utf-8") as f:
         f.write(final_report_text)
 
-    print("\n" + final_report_text)
+    print("\n" + final_report_text + "\n")
 
     logger.info(f"Inference completed in {time.time() - start:.4f}s")
 
