@@ -4,19 +4,21 @@ chcp 65001 >nul
 set "CURRENT_DIR=%~dp0"
 if "%CURRENT_DIR:~-1%"=="\" set "CURRENT_DIR=%CURRENT_DIR:~0,-1%"
 
+set "DEST_INCOMING_PATH=%CURRENT_DIR%\incoming_files"
+
 echo ========================================================
 echo               Setup RAG Copy Script
 echo ========================================================
 echo.
 
-set /p "USER_BASE_DIR=Please enter the path for BASE_DIR: "
+set /p "SRC_REPO_PATH=Please enter the Repository Path (former BASE_DIR): "
 
-if "%USER_BASE_DIR%"=="" (
+if "%SRC_REPO_PATH%"=="" (
     echo Error: No path entered. Setup aborted.
     pause
     exit /b
 )
-set "USER_BASE_DIR=%USER_BASE_DIR:"=%"
+set "SRC_REPO_PATH=%SRC_REPO_PATH:"=%"
 
 set "TARGET_FILE=copy_files_to_rag.bat"
 set "TEMP_FILE=copy_files_to_rag.tmp"
@@ -39,10 +41,10 @@ setlocal DisableDelayedExpansion
 
     if "!line!"=="" (
         echo(
-    ) else if "!line:~0,15!"=="set "TARGET_DIR=" (
-        echo set "TARGET_DIR=!CURRENT_DIR!\incoming_files"
-    ) else if "!line:~0,13!"=="set "BASE_DIR=" (
-        echo set "BASE_DIR=!USER_BASE_DIR!"
+    ) else if /I "!line:~0,16!"=="set "TARGET_DIR=" (
+        echo set "TARGET_DIR=!DEST_INCOMING_PATH!"
+    ) else if /I "!line:~0,14!"=="set "BASE_DIR=" (
+        echo set "BASE_DIR=!SRC_REPO_PATH!"
     ) else (
         echo(!line!
     )
@@ -51,11 +53,42 @@ setlocal DisableDelayedExpansion
 
 move /y "%TEMP_FILE%" "%TARGET_FILE%" >nul
 
+set "ENV_FILE=.env"
+set "ENV_TEMP=.env.tmp"
+
+if exist "%ENV_FILE%" (
+    echo Updating %ENV_FILE%...
+    setlocal DisableDelayedExpansion
+    (for /f "delims=" %%A in ('findstr /n "^" "%ENV_FILE%"') do (
+        set "fullLine=%%A"
+        setlocal EnableDelayedExpansion
+
+        set "line=!fullLine:*:=!"
+
+        if "!line!"=="" (
+            echo(
+        ) else if /I "!line:~0,11!"=="TARGET_DIR=" (
+            echo TARGET_DIR=!SRC_REPO_PATH!
+        ) else (
+            echo(!line!
+        )
+        endlocal
+    )) > "%ENV_TEMP%"
+
+    move /y "%ENV_TEMP%" "%ENV_FILE%" >nul
+) else (
+    echo [WARNING] %ENV_FILE% not found in the current folder! Skipping.
+)
+
 echo.
 echo [SUCCESS] Settings updated successfully!
 echo.
-echo TARGET_DIR : %CURRENT_DIR%\incoming_files
-echo BASE_DIR   : %USER_BASE_DIR%
+echo [copy_files_to_rag.bat]
+echo   - TARGET_DIR : %DEST_INCOMING_PATH%
+echo   - BASE_DIR   : %SRC_REPO_PATH%
+echo.
+echo [.env file]
+echo   - TARGET_DIR : %SRC_REPO_PATH%
 echo.
 
 docker-compose up -d
