@@ -72,13 +72,15 @@ I intentionally injected structural and logic bugs into a repository. Here are e
 - else:
 -     transaction_ids = None
 
-  # 2. Drop useless columns
   X = df.drop(columns=["isFraud", "TransactionID", "TransactionDT",
                        "id_24", "id_25", "id_07", "id_08", "id_21",
 -                      "uid1", "card1"], errors='ignore')
 +                      "uid1", "card1"], ignore_errors=True)
 
 ```
+
+
+#### Response
 
 ```json
 {
@@ -130,6 +132,7 @@ if not good_precisions.empty:
 -   logger.warning("Business Target Precision is unreachable. Using best f1 threshold.")
 client.log_param(run_id, "best_business_threshold", best_business_threshold)
 ```
+#### Response
 
 ```json
 {
@@ -184,8 +187,7 @@ def training_lgbm(train_data: lgb.Dataset, valid_data: lgb.Dataset, lgbm_params:
     logger.info(f"Model saved to {LGBM_MODEL_PATH}")
     return model
 ```
-
-
+#### Response
 
 ```json
 {
@@ -223,7 +225,7 @@ def training_lgbm(train_data: lgb.Dataset, valid_data: lgb.Dataset, lgbm_params:
 - X_val_batch = X_val_batch.to(device)
 + X_val_batch = X_val_batch.send_to(device)
 ```
-
+#### Response
 
 ```json
 {
@@ -255,12 +257,13 @@ def training_lgbm(train_data: lgb.Dataset, valid_data: lgb.Dataset, lgbm_params:
 }
 ```
 
-## aaaa
+### 5. Changed number of returned elements
 
 ```diff
 - return str(transaction["TransactionID"]), is_fraud, fraud_probability, reason
 + return str(transaction["TransactionID"]), is_fraud, fraud_probability
 ```
+#### Response
 
 ```json
 {
@@ -295,43 +298,5 @@ def training_lgbm(train_data: lgb.Dataset, valid_data: lgb.Dataset, lgbm_params:
   },
   "verdict_status": "FAIL",
   "issue_description": "The number of returned elements changed from 4 to 3, which is a breaking change. The caller line is not found, so we cannot verify the safe update."
-}
-```
-
-## AAA
-
-```diff
-- return train_data, valid_data, test_data, X_train, X_val, X_test
-+ return train_data, valid_data, test_data, X_train, X_val
-````
-
-
-```json
-{
-  "step0_diff_analysis": {
-    "code_changes": "The previous version of the function returned six elements, while the target function now returns only five elements. The sixth element, X_test, has been removed from the return statement.",
-    "signature_and_returns_diff": "Yes. The number of returned elements changed from 6 to 5."
-  },
-  "step1_scope_analysis": {
-    "variables_assigned_in_if_or_try_blocks": "None",
-    "missing_else_or_except_blocks": "None",
-    "typo_check": "None"
-  },
-  "step2_signature_and_returns_analysis": {
-    "target_return_elements_count": "return train_data, valid_data, test_data, X_train, X_val",
-    "returns_internally_consistent": "Yes",
-    "target_expected_args_count": "6",
-    "caller_line_exact_match": "NOT FOUND",
-    "caller_unpacked_vars_count": "N_A",
-    "caller_passed_args_count": "N_A",
-    "counts_match_or_breaking_change": "No / N_A"
-  },
-  "step3_calls_validation": {
-    "internal_calls_match": "None",
-    "external_libraries_check": "None",
-    "issues_found": "None"
-  },
-  "verdict_status": "FAIL",
-  "issue_description": "The number of returned elements changed from 6 to 5, but the caller is not found to verify the safe update. This is a breaking change."
 }
 ```
