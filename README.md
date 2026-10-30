@@ -65,6 +65,7 @@ docker-compose down -vtem strictly validates structure and context, not mathemat
 I intentionally injected structural and logic bugs into a repository. Here are examples (red change is the original version, green change is obviously wrong version):
 
 ### 1. Missing Library Method, Out of Scope Error
+The AI uses its internal knowledge of pandas to catch parameters that don't exist, which simple AST parsers or regex would miss.
 
 ```diff
   X = df.drop(columns=["isFraud", "TransactionID", "TransactionDT",
@@ -77,7 +78,7 @@ I intentionally injected structural and logic bugs into a repository. Here are e
 
 #### Response
 
-```json
+```jsonc
 {
   "step0_diff_analysis": {
     "code_changes": "The main change is the removal of the `errors='ignore'` parameter in the `drop` method call. It was changed from `ignore_errors=True` to `ignore_errors=True` (which is the same) and then removed entirely.",
@@ -115,6 +116,8 @@ I intentionally injected structural and logic bugs into a repository. Here are e
 ```
 
 ### 2. Out of Scope Error
+Missing Fallback Logic (Out of Scope)
+The Insight: The AI detects when a variable might remain unassigned if a specific condition isn't met, preventing UnboundLocalError in production
 
 ```diff
 if not good_precisions.empty:
@@ -129,7 +132,7 @@ client.log_param(run_id, "best_business_threshold", best_business_threshold)
 ```
 #### Response
 
-```json
+```jsonc
 {
   "step0_diff_analysis": {
     "code_changes": "The main change is the removal of the fallback mechanism for `best_business_threshold` when `good_precisions` is empty. The previous version used `best_f1_threshold` as a fallback, while the current version does not handle this case explicitly.",
@@ -170,13 +173,13 @@ def training_lgbm(train_data: lgb.Dataset, valid_data: lgb.Dataset, lgbm_params:
 ```
 #### Response
 
-```json
+```jsonc
 {
   "step0_diff_analysis": {
     "code_changes": "The `training_lgbm` function now calls `lightgbm_model` without passing the `lgbm_params` argument.",
     "signature_and_returns_diff": "No, the number of expected arguments or the number of returned elements did not change."
   },
-...
+// ...
   "step2_signature_and_returns_analysis": {
     "target_return_elements_count": "return model",
     "returns_internally_consistent": "Yes",
@@ -207,26 +210,13 @@ def training_lgbm(train_data: lgb.Dataset, valid_data: lgb.Dataset, lgbm_params:
 ```
 #### Response
 
-```json
+```jsonc
 {
   "step0_diff_analysis": {
     "code_changes": "The main changes between the previous version and the target function code are: 1) The method `optimizer.zero_grad()` was replaced with `optimizer.clear_gradients()`, which does not exist in PyTorch. 2) The method `X_val_batch.send_to(device)` was replaced with `X_val_batch.to(device)`, which is the correct method to move tensors to a device in PyTorch.",
     "signature_and_returns_diff": "No, the number of expected arguments and the number of returned elements did not change."
   },
-  "step1_scope_analysis": {
-    "variables_assigned_in_if_or_try_blocks": "None",
-    "missing_else_or_except_blocks": "None",
-    "typo_check": "None"
-  },
-  "step2_signature_and_returns_analysis": {
-    "target_return_elements_count": "return val_loss",
-    "returns_internally_consistent": "Yes",
-    "target_expected_args_count": "7",
-    "caller_line_exact_match": "_, val_loss = training_nn(X_train_nn_short, X_val_nn_short, trial_params, trial=trial)",
-    "caller_unpacked_vars_count": "2",
-    "caller_passed_args_count": "4",
-    "counts_match_or_breaking_change": "No"
-  },
+  ...
   "step3_calls_validation": {
     "internal_calls_match": "Yes",
     "external_libraries_check": "The method `send_to` does not exist in PyTorch. The correct method is `to`. The method `optimizer.clear_gradients()` does not exist in PyTorch. The correct method is `zero_grad`.",
@@ -238,6 +228,8 @@ def training_lgbm(train_data: lgb.Dataset, valid_data: lgb.Dataset, lgbm_params:
 ```
 
 ### 5. Changed number of returned elements
+3. Breaking Changes in Returns (Context-Aware)
+The Insight: By comparing the new code with the old version (diff), the AI catches breaking changes even if the caller function isn't provided in the RAG context.
 
 ```diff
 - return str(transaction["TransactionID"]), is_fraud, fraud_probability, reason
@@ -245,7 +237,7 @@ def training_lgbm(train_data: lgb.Dataset, valid_data: lgb.Dataset, lgbm_params:
 ```
 #### Response
 
-```json
+```jsonc
 {
   "step0_diff_analysis": {
     "code_changes": "The previous version of the function included a return statement with four elements: transaction ID, is_fraud, fraud_probability, and reason. The target function now returns only three elements: transaction ID, is_fraud, and fraud_probability.",
@@ -280,3 +272,4 @@ def training_lgbm(train_data: lgb.Dataset, valid_data: lgb.Dataset, lgbm_params:
   "issue_description": "The number of returned elements changed from 4 to 3, which is a breaking change. The caller line is not found, so we cannot verify the safe update."
 }
 ```
+
