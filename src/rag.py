@@ -93,7 +93,7 @@ def process_item(client, cursor, file_path, func_name, docstring, raw_functions)
 
 
 def get_db_dependencies(client, cursor, code: str) -> list[tuple]:
-    """Find similar functions in RAG PostgreSQL. Returns [('file::func', code)]."""
+    """Find similar functions in RAG PostgreSQL. Input: raw code. Returns [('file::func', code)]."""
     MAX_COSINE_DISTANCE = float(CFG["inference"]["max_cosine_distance"])
     TOP_K = int(CFG["inference"]["top_k"])
 
@@ -150,14 +150,14 @@ def get_batch_context(target_key: str, target_code: str, batch_changes: dict) ->
     return batch_context or "None"
 
 def normalize_code(code: str) -> str:
-    """Очищает код от невидимого мусора форматирования для честного сравнения."""
+    """Normalize code for fair comparison"""
     if not code:
         return ""
-    # 1. Унифицируем переносы строк (убиваем \r)
+    # kill \r
     code = code.replace('\r\n', '\n')
-    # 2. Убираем висячие пробелы в конце КАЖДОЙ строки по отдельности
+    # kill spaces
     lines = [line.rstrip() for line in code.split('\n')]
-    # 3. Склеиваем обратно и убираем пустые строки сверху и снизу
+    # kill ending line breaks
     return '\n'.join(lines).strip()
 
 def filter_modified_functions(cursor, extracted_functions: dict) -> dict:
@@ -183,7 +183,6 @@ def filter_modified_functions(cursor, extracted_functions: dict) -> dict:
             not_in_db += 1
             batch_changes[key] = new_code
         else:
-            # Сравниваем НОРМАЛИЗОВАННЫЙ код
             db_code = normalize_code(db_result[0])
             incoming_code = normalize_code(new_code)
 
