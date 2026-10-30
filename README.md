@@ -71,8 +71,8 @@ A variable was left without a default state, and a non-existent argument (`ignor
 ```diff
   if "TransactionID" in df.columns:
       transaction_ids = df["TransactionID"]
-+ else:
-+     transaction_ids = None
+- else:
+-     transaction_ids = None
 
   # 2. Drop useless columns
   X = df.drop(columns=["isFraud", "TransactionID", "TransactionDT",
@@ -119,10 +119,18 @@ A variable was left without a default state, and a non-existent argument (`ignor
 + client.log_metric(run_id, f"lgbm_{prefix}_accuracy", accuracy_score(y_pred))
 ```
 
+```diff
+if not good_precisions.empty:
+    # Sort Recall in descending order and get the first (maximum) row
+    best_row = good_precisions.sort_values(by='recall', ascending=False).iloc[0]
+    best_business_threshold = best_row['threshold']
+    logger.info(f"Business Target Precision {business_target_precision} achieved at threshold: {best_business_threshold}")
+- else:
+-   best_business_threshold = best_f1_threshold  # fallback
+-   logger.warning("Business Target Precision is unreachable. Using best f1 threshold.")
+client.log_param(run_id, "best_business_threshold", best_business_threshold)
+```
 
-
-
-[src/training/evaluation.py::find_best_threshold]
 ```json
 {
   "step1_scope_analysis": {
@@ -146,4 +154,106 @@ A variable was left without a default state, and a non-existent argument (`ignor
   "verdict_status": "FAIL",
   "issue_description": "The variable `best_business_threshold` is assigned inside an `if` block but not assigned a default value if the condition is not met. This could lead to a `NameError` if `best_business_threshold` is used later in the function without being defined."
 }
-``
+```
+
+
+
+```diff
+- return train_data, valid_data, test_data, X_train, X_val, X_test
++ return train_data, valid_data, test_data, X_train, X_val
+```
+
+```diff
+def training_lgbm(train_data: lgb.Dataset, valid_data: lgb.Dataset, lgbm_params: dict[str, Any]) -> lgb.Booster:
+    start = time.time()
+-    model = lightgbm_model(train_data, valid_data, lgbm_params)
++    model = lightgbm_model(train_data, valid_data)
+    
+    mlflow.lightgbm.log_model(model, name="model")
+    mlflow.log_metric("lgbm_best_iteration", model.best_iteration)
+    logger.info(f"Training completed in {time.time() - start:.4f}s")
+    
+    model.save_model(LGBM_MODEL_PATH, num_iteration=model.best_iteration)
+    logger.info(f"Model saved to {LGBM_MODEL_PATH}")
+    return model
+```
+
+
+
+
+```json
+{
+  "step1_scope_analysis": {
+    "variables_assigned_in_if_or_try_blocks": "None",
+    "missing_else_or_except_blocks": "None",
+    "typo_check": "None"
+  },
+  "step2_returns_math": {
+    "target_return_counts": "return model",
+    "caller_line_exact_match": "model_lgbm = training_lgbm(train_data, valid_data, config[\"lgbm_params\"])",
+    "caller_unpacks_count": "1",
+    "counts_match": "Yes"
+  },
+  "step3_calls_validation": {
+    "internal_calls_match": "The call to `lightgbm_model` does not match the signature from the related function. The related function expects `params` as an argument, but `lgbm_params` is passed.",
+    "external_libraries_check": "None",
+    "issues_found": "The call to `lightgbm_model` does not match the expected signature."
+  },
+  "verdict_status": "FAIL",
+  "issue_description": "The call to `lightgbm_model` does not match the expected signature. The related function expects `params` as an argument, but `lgbm_params` is passed."
+}
+```
+
+
+
+```diff
+- optimizer.zero_grad()
++ optimizer.clear_gradients()
+```
+
+```diff
+- X_val_batch = X_val_batch.to(device)
++ X_val_batch = X_val_batch.send_to(device)
+```
+
+```diff
+logger.info(
+    f"Epoch {epoch + 1}/{n_epochs} | "
+    f"train_loss={train_loss:.4f} | "
+-     f"val_loss={val_loss:.4f} | "
+    f"val_rmse={rmse:.4f} | "    
+    f"val_mae={mae:.4f}"
+)
+
+```
+
+
+
+```json
+{
+  "step1_scope_analysis": {
+    "variables_assigned_in_if_or_try_blocks": [
+      "best_model_weights",
+      "early_stopping",
+      "val_loss",
+      "rmse",
+      "mae"
+    ],
+    "missing_else_or_except_blocks": "None",
+    "typo_check": "None"
+  },
+  "step2_returns_math": {
+    "target_return_counts": "return val_loss",
+    "caller_line_exact_match": "val_loss = train_nn_loop(model, train_loader, val_loader, optimizer, loss_fn, n_epochs, trial=trial)",
+    "caller_unpacks_count": "1",
+    "counts_match": "Yes"
+  },
+  "step3_calls_validation": {
+    "internal_calls_match": "None",
+    "external_libraries_check": "The method `send_to` in PyTorch does not exist. It should be `to` instead.",
+    "issues_found": "The method `send_to` in PyTorch does not exist. It should be `to` instead."
+  },
+  "verdict_status": "FAIL",
+  "issue_description": "The method `send_to` in PyTorch does not exist. It should be `to` instead."
+}
+```
