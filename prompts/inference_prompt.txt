@@ -15,26 +15,27 @@ You are a strict automated AI code reviewer.
 [OTHER MODIFIED FUNCTIONS IN THIS COMMIT]
 {batch_context}
 
-TASK: Audit the [TARGET FUNCTION CODE] strictly against the provided context. Do NOT report unused parameters.
+TASK: Audit the [TARGET FUNCTION CODE] strictly against the provided context and your internal knowledge of standard libraries. Do NOT report unused parameters.
 
-Answer EXACTLY in this format:
+You MUST answer EXACTLY as a valid JSON object. Do not output any markdown text outside the JSON. Use the following schema:
 
-[REASONING]
-1. Scope:
-- Verify local variables are assigned before use (ignore ALL_CAPS and global modules).
-- Quote EVERY item from [UNVERIFIED ATTRIBUTES].
-- Cross-reference them with [CLASS METHODS AND ATTRIBUTES ASSIGNED IN OTHER METHODS]. If an unverified attribute shares a core word/substring with a known attribute, it is a fatal typo. You MUST write FAIL.
-2. Returns:
-- Quote EVERY SINGLE `return` statement from the target function. You MUST explicitly check inside `try`, `except`, and `if` blocks. Do not skip any.
-- For EACH quoted return statement, explicitly write the COUNT of returned elements (e.g., "1 element" or "2 elements").
-- Find and quote the EXACT line in [EXISTING RELATED FUNCTIONS FROM REPO] where this function is called.
-- Explicitly write the COUNT of variables the caller unpacks.
-- Compare the counts. If ANY return statement count does NOT exactly match the caller's count, write FAIL.
-3. Calls:
-- Find and quote ALL function calls from the target code that match functions in [EXISTING RELATED FUNCTIONS FROM REPO]. Do NOT stop after finding just one.
-- Quote the EXACT function signature from the context for EACH matched call.
-- If the target code passes an argument (like kwargs or extra variables) that does NOT exist in the quoted signature, write FAIL.
-
-[VERDICT]
-STATUS: <PASS or FAIL>
-ISSUE: <If FAIL, quote the code and explain the bug. If PASS, write "None">
+{{
+  "step1_scope_analysis": {{
+    "variables_assigned_in_if_or_try_blocks": "List variables returned or used globally that are first assigned inside an `if` or `try` block.",
+    "missing_else_or_except_blocks": "Are there explicit `else` or `except` blocks assigning default values for those variables? If missing, explain here and fail the audit.",
+    "typo_check": "Cross-reference [UNVERIFIED ATTRIBUTES] with [CLASS METHODS...]. Note any fatal typos sharing a core substring."
+  }},
+  "step2_returns_math": {{
+    "target_return_counts": "Quote each return statement and explicitly write the count of returned elements.",
+    "caller_line_exact_match": "Find and quote the EXACT line in [EXISTING RELATED FUNCTIONS FROM REPO] where this function is called. If it is NOT found, write 'NOT FOUND' and DO NOT invent or hallucinate the caller code.",
+    "caller_unpacks_count": "Write the count of variables the caller unpacks, or 'N/A' if not found.",
+    "counts_match": "Yes / No / N_A. If No, this is a FAIL."
+  }},
+  "step3_calls_validation": {{
+    "internal_calls_match": "Check arguments passed to functions from [EXISTING RELATED FUNCTIONS FROM REPO]. Do they match the quoted signature perfectly?",
+    "external_libraries_check": "Verify all calls to external libraries (pandas, sklearn, torch, etc.) using your internal knowledge. Explicitly check if the method exists (e.g., `send_to` in PyTorch does not exist) and if the arguments are valid (e.g., `ignore_errors=True` in pandas `drop()` is invalid).",
+    "issues_found": "Describe any nonexistent methods or invalid arguments here."
+  }},
+  "verdict_status": "PASS or FAIL",
+  "issue_description": "If FAIL, explicitly quote the code and explain the bug. If PASS, write 'None'."
+}}
