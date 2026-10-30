@@ -39,11 +39,13 @@ setlocal DisableDelayedExpansion
 
     set "line=!fullLine:*:=!"
 
+    set "checkLine=!line:"=!"
+
     if "!line!"=="" (
         echo(
-    ) else if /I "!line:~0,16!"=="set "TARGET_DIR=" (
+    ) else if /I "!checkLine:~0,15!"=="set TARGET_DIR=" (
         echo set "TARGET_DIR=!DEST_INCOMING_PATH!"
-    ) else if /I "!line:~0,14!"=="set "BASE_DIR=" (
+    ) else if /I "!checkLine:~0,13!"=="set BASE_DIR=" (
         echo set "BASE_DIR=!SRC_REPO_PATH!"
     ) else (
         echo(!line!
