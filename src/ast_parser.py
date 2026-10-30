@@ -5,7 +5,7 @@ import os
 import re
 import textwrap
 import time
-from lib2to3.refactor import get_fixers_from_package, RefactoringTool
+from lib2to3.refactor import RefactoringTool, get_fixers_from_package
 from typing import Any
 
 from dotenv import load_dotenv
@@ -79,9 +79,8 @@ class CodeExtractor(ast.NodeVisitor):
                 for target in stmt.targets:
                     if isinstance(target, ast.Name):
                         class_vars.add(target.id)
-            elif isinstance(stmt, ast.AnnAssign):
-                if isinstance(stmt.target, ast.Name):
-                    class_vars.add(stmt.target.id)
+            elif isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name):
+                class_vars.add(stmt.target.id)
 
         self.data["classes"][node.name]["class_vars"] = list(class_vars)
 
@@ -204,7 +203,7 @@ def run_2to3(source_file: str, file_path: str) -> str | None:
         refactored_code = str(tree)
         refactored_code = re.sub(r'\basync\b', 'is_async', refactored_code)
         return refactored_code
-    except Exception as e:
+    except Exception as e: # noqa: BLE001
         logger.info(f"2to3 failed for {file_path}: {e}")
         return None
 
