@@ -20,8 +20,8 @@ if "%SRC_REPO_PATH%"=="" (
 )
 set "SRC_REPO_PATH=%SRC_REPO_PATH:"=%"
 
-set "TARGET_FILE=copy_files_to_rag.bat"
-set "TEMP_FILE=copy_files_to_rag.tmp"
+set "TARGET_FILE=%CURRENT_DIR%\0_copy_files_to_rag.bat"
+set "TEMP_FILE=%CURRENT_DIR%\0_copy_files_to_rag.tmp"
 
 if not exist "%TARGET_FILE%" (
     echo Error: "%TARGET_FILE%" not found in the current folder!
@@ -30,7 +30,7 @@ if not exist "%TARGET_FILE%" (
 )
 
 echo.
-echo Updating %TARGET_FILE%...
+echo Updating copy_files_to_rag.bat...
 
 setlocal DisableDelayedExpansion
 (for /f "delims=" %%A in ('findstr /n "^" "%TARGET_FILE%"') do (
@@ -53,11 +53,11 @@ setlocal DisableDelayedExpansion
 
 move /y "%TEMP_FILE%" "%TARGET_FILE%" >nul
 
-set "ENV_FILE=.env"
-set "ENV_TEMP=.env.tmp"
+set "ENV_FILE=%CURRENT_DIR%\.env"
+set "ENV_TEMP=%CURRENT_DIR%\.env.tmp"
 
 if exist "%ENV_FILE%" (
-    echo Updating %ENV_FILE%...
+    echo Updating .env...
     setlocal DisableDelayedExpansion
     (for /f "delims=" %%A in ('findstr /n "^" "%ENV_FILE%"') do (
         set "fullLine=%%A"
@@ -77,7 +77,7 @@ if exist "%ENV_FILE%" (
 
     move /y "%ENV_TEMP%" "%ENV_FILE%" >nul
 ) else (
-    echo [WARNING] %ENV_FILE% not found in the current folder! Skipping.
+    echo [WARNING] .env not found in the current folder! Skipping.
 )
 
 echo.
