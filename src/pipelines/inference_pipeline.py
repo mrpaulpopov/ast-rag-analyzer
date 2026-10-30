@@ -61,7 +61,6 @@ def inference_pipeline(file_paths: list[tuple[str, str]]):
     for i, (key, codes) in enumerate(batch_changes.items(), 1):
         logger.info(f"[{i}/{len(batch_changes)}] {key}")
 
-        # Распаковываем старый и новый код
         new_code = codes.get("new", "")
         old_code = codes.get("old", "")
 
