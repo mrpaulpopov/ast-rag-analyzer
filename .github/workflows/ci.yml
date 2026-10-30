@@ -9,6 +9,16 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      OLLAMA_HOST: "http://localhost:11434"
+      VECTOR_MODEL: "dummy_vector_model"
+      ANALYSIS_MODEL: "dummy_analysis_model"
+      POSTGRES_USER: "postgres"
+      POSTGRES_PASSWORD: "password"
+      POSTGRES_HOST: "localhost"
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: "test_db"
+      TARGET_DIR: "/tmp"
 
     steps:
       - name: Checkout repo
@@ -43,16 +53,6 @@ jobs:
           mypy src/ --ignore-missing-imports
 
       - name: Run tests
-        env:
-          OLLAMA_HOST: "http://localhost:11434"
-          VECTOR_MODEL: "dummy_vector_model"
-          ANALYSIS_MODEL: "dummy_analysis_model"
-          POSTGRES_USER: "postgres"
-          POSTGRES_PASSWORD: "password"
-          POSTGRES_HOST: "localhost"
-          POSTGRES_PORT: "5432"
-          POSTGRES_DB: "test_db"
-          TARGET_DIR: "/tmp"
         run: |
           pytest -v
 
