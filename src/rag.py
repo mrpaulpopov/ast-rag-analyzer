@@ -1,5 +1,4 @@
 import ast
-import difflib
 import json
 import logging
 import os
@@ -130,7 +129,7 @@ def get_project_context(client, cursor, target_key: str, target_code: str, batch
             continue
 
         # 2. Отсекаем старые версии ДРУГИХ измененных функций из этого же батча
-        is_in_batch = any(key.endswith(b_key) or b_key.endswith(key) for b_key in batch_changes.keys())
+        is_in_batch = any(key.endswith(b_key) or b_key.endswith(key) for b_key in batch_changes)
         if is_in_batch:
             continue
 
@@ -181,15 +180,21 @@ def filter_modified_functions(cursor, extracted_functions: dict) -> dict:
 
         if db_result is None:
             not_in_db += 1
-            batch_changes[key] = new_code
+            batch_changes[key] = {
+                "new": new_code,
+                "old": ""
+            }
         else:
-            db_code = normalize_code(db_result[0])
+            raw_old_code = db_result[0]
+            db_code = normalize_code(raw_old_code)
             incoming_code = normalize_code(new_code)
 
             if db_code != incoming_code:
                 different += 1
-                batch_changes[key] = new_code
-
+                batch_changes[key] = {
+                    "new": new_code,
+                    "old": raw_old_code
+                }
             else:
                 same += 1
 

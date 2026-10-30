@@ -58,10 +58,18 @@ def inference_pipeline(file_paths: list[tuple[str, str]]):
     logger.info("Running LLM checks...")
     results_data = []
 
-    for i, (key, code) in enumerate(batch_changes.items(), 1):
+    for i, (key, codes) in enumerate(batch_changes.items(), 1):
         logger.info(f"[{i}/{len(batch_changes)}] {key}")
+
+        # Распаковываем старый и новый код
+        new_code = codes.get("new", "")
+        old_code = codes.get("old", "")
+
         try:
-            result = analyze_function(client, cursor, key, code, batch_changes, extracted_functions, extracted_ast)
+            result = analyze_function(
+                client, cursor, key, new_code, old_code,
+                batch_changes, extracted_functions, extracted_ast
+            )
 
             match = re.search(r'["\']verdict_status["\']\s*:\s*["\'](PASS|FAIL)["\']', str(result), re.IGNORECASE)
             status = match.group(1).upper() if match else "UNKNOWN"
