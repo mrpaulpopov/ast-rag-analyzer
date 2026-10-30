@@ -275,7 +275,7 @@ def find_called_functions_in_code(code: str) -> list[str]:
     return names
 
 
-def extract_class_attributes(target_key: str, target_code: str, all_functions: dict, all_ast: dict) -> tuple[set, set]:
+def extract_class_attributes(target_key: str, target_code: str, batch_functions: dict, batch_ast: dict) -> tuple[set, set]:
     """ Attributes handling. """
     file_path, name = target_key.rsplit("::", 1)
     known_attrs: set[str] = set()
@@ -287,13 +287,13 @@ def extract_class_attributes(target_key: str, target_code: str, all_functions: d
     cls_name = name.split('.')[0]
 
     # 1. Достаем переменные уровня класса из AST
-    file_ast = all_ast.get(file_path, {})
+    file_ast = batch_ast.get(file_path, {})
     cls_info = file_ast.get("classes", {}).get(cls_name, {})
     known_attrs.update(cls_info.get("class_vars", []))
 
     # 2. Достаем переменные из методов (self.x = ...)
     class_prefix = f"{file_path}::{cls_name}."
-    for key, code in all_functions.items():
+    for key, code in batch_functions.items():
         if not key.startswith(class_prefix):
             continue
         known_attrs.add(key[len(class_prefix):])
