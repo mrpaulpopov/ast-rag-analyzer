@@ -8,12 +8,12 @@ This project is an AI code reviewer designed to analyze a Python codebase. Based
 
 
 During inference, the pipeline collects:
-- **related functions from the RAG database**,
-- other functions from submitted files,
-- variables and attributes,
-- return statement counts.
+- **Related functions from the RAG database**,
+- Other functions from submitted files,
+- Variables and attributes,
+- Return statement counts.
 
-This guarantees the detection of **scope errors, structural mismatches, and invalid calls**.
+This ensures the detection of **scope errors, structural mismatches, and invalid calls**.
 
 Finally, the assembled context is sent as a prompt to a local LLM (e.g., Qwen2.5-Coder).
 
@@ -25,45 +25,11 @@ Finally, the assembled context is sent as a prompt to a local LLM (e.g., Qwen2.5
   <img alt="Training Data Flow Diagram" src="docs/DFD_Light.svg" width="100%">
 </picture>
 
-## How to Run
-
-#### First Launch (Run Docker Containers, Download Models)
-```
-docker-compose up -d
-```
-
-#### Training, Update, Inference Launch (with GPU)
-```
-docker-compose -f docker-compose.yml -f docker-compose.gpu.yml run --rm --build app python src/pipelines/training_pipeline.py
-docker-compose -f docker-compose.yml -f docker-compose.gpu.yml run --rm --build app python src/pipelines/update_pipeline.py
-docker-compose -f docker-compose.yml -f docker-compose.gpu.yml run --rm --build app python src/pipelines/inference_pipeline.py
-```
-
-#### Adminer Interface (Explore Database)
-```
-localhost:8080
-```
-
-#### Delete All (Database and Downloaded Models)
-```
-docker-compose down -v
-```
-
-## Limitations
-1. Manual execution: The inference pipeline currently supports only manual file selection for analysis. There's no automated Git or CI integration.
-2. Blind to business logic: If the RAG fails to find relevant context, the `[EXISTING RELATED FUNCTIONS FROM REPO]` section will be empty and an LLM query will lack context.
-4. Attention degradation: If the generated prompt consists of thousands of lines of code, a 14B model will lose the attention.
-
-## Possible Improvements
-1. CI/CD Integration: The inference pipeline should be integrated directly into a CI pipeline to execute automatically on every commit or pull request.
-2. AI Agents: The final prompt texts can be sent to AI agents: they have a much greater Precision/Recall ratio rather than a local LLM.
-
-
 ## Detection Examples
 
 I intentionally injected structural and logic bugs into a repository. Here are examples (red change is the original version, green change is an obviously wrong version):
 
-### 1. Missing Library Method, Out of Scope Error
+### 1. Missing Library Method
 The AI uses its internal knowledge of Pandas to catch parameters that don't exist, which simple AST parsers or regex would miss.
 
 ```diff
@@ -210,7 +176,7 @@ The AI uses its internal knowledge of PyTorch to catch methods that don't exist,
 ```
 
 ### 5. Changed number of returned elements
-By comparing the new code with the old version (diff), the AI catches breaking changes even if the caller function isn't provided in the RAG context.
+By comparing the new code with the old version, the AI catches the bug even if the caller function isn't provided in the RAG context.
 
 ```diff
 - return str(transaction["TransactionID"]), is_fraud, fraud_probability, reason
@@ -243,3 +209,38 @@ By comparing the new code with the old version (diff), the AI catches breaking c
 }
 ```
 
+## Limitations
+1. Manual execution: The inference pipeline currently supports only manual file selection for analysis. There's no automated Git or CI integration.
+2. Blind to business logic: If the RAG fails to find relevant context, the `[EXISTING RELATED FUNCTIONS FROM REPO]` section will be empty and an LLM query will lack context.
+3. Attention degradation: If the generated prompt consists of thousands of lines of code, a 14B model will lose the attention.
+
+## Possible Improvements
+1. CI/CD Integration: The inference pipeline should be integrated directly into a CI pipeline to execute automatically on every commit or pull request.
+2. AI Agents: The final prompt texts can be sent to AI agents: they have a much higher Precision/Recall ratio compared to a local LLM.
+
+
+
+
+## How to Run
+
+#### First Launch (Run Docker Containers, Download Models)
+```
+docker compose up -d
+```
+
+#### Training, Update, Inference Launch (with GPU)
+```
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml run --rm --build app python src/pipelines/training_pipeline.py
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml run --rm --build app python src/pipelines/update_pipeline.py
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml run --rm --build app python src/pipelines/inference_pipeline.py
+```
+
+#### Adminer Interface (Explore Database)
+```
+localhost:8080
+```
+
+#### Delete All (Database and Downloaded Models)
+```
+docker compose down -v
+```
