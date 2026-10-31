@@ -96,7 +96,7 @@ def analyze_function(client, cursor, target_key: str, new_code: str, old_code: s
     known_attrs_str = ", ".join(sorted(known_attrs)) or "None"
     unknown_attrs_str = ", ".join(sorted(unknown_attrs)) or "None"
 
-    # Reading prompt from txt
+    # Read the prompt from txt
     prompt_template = INFERENCE_PROMPT_PATH.read_text(encoding="utf-8")
     prompt = prompt_template.format(
         target_code=new_code,

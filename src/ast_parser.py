@@ -122,7 +122,7 @@ def extract_ast_code_structure(source: str, file_path: str, project_root: str) -
 
 
 def extract_project_ast_code_structure(updated_files=None) -> None:
-    target_dir = "/app/data"  # docker-relative folder
+    target_dir = "/app/data"  # Docker-relative folder
 
     if updated_files is None:
         file_paths = iter_python_files(target_dir, IGNORED_DIRS)
@@ -157,11 +157,11 @@ def merge_ast_and_docs(ast_functions_path, described_functions_path, rag_functio
     ast_functions = json.loads(ast_functions_path.read_text(encoding="utf-8"))
     docs = json.loads(described_functions_path.read_text(encoding="utf-8"))
 
-    # Allocating empty space in dictionary:
+    # Initialize empty values in the dictionary:
     # For each file,
-    #   replace "functions": ["A", "B"] to "functions": {"A": None, "B": None}
-    #   And for each "classes",
-    #       replace "methods": ["A", "B"] to "methods": {"A": None, "B": None}
+    #   replace "functions": ["A", "B"] with "functions": {"A": None, "B": None}
+    #   And for the "classes" key,
+    #       replace "methods": ["A", "B"] with "methods": {"A": None, "B": None}
 
 
     for file_path, file_info in ast_functions.items():
@@ -173,7 +173,7 @@ def merge_ast_and_docs(ast_functions_path, described_functions_path, rag_functio
             cls_info["methods"] = {method_name: None for method_name in methods_list}
 
     # Split unique_key by ::
-    # and apply docstring to each function and method.
+    # and apply the docstring to each function and method.
     for unique_key, docstring in docs.items():
         try:
             file_path, func_fullname = unique_key.split("::")
@@ -280,17 +280,17 @@ def extract_class_attributes(target_key: str, target_code: str, batch_functions:
     known_attrs: set[str] = set()
     used_attrs: set[str] = set()
 
-    if "." not in name:  # if it's not a class
+    if "." not in name:  # if it's a function (not a method)
         return known_attrs, used_attrs
 
     cls_name = name.split('.')[0]
 
-    # 1. Достаем переменные уровня класса из AST
+    # 1. Extract class-level variables from the AST
     file_ast = batch_ast.get(file_path, {})
     cls_info = file_ast.get("classes", {}).get(cls_name, {})
     known_attrs.update(cls_info.get("class_vars", []))
 
-    # 2. Достаем переменные из методов (self.x = ...)
+    # 2. Extract instance variables assigned in methods (self.x = ...)
     class_prefix = f"{file_path}::{cls_name}."
     for key, code in batch_functions.items():
         if not key.startswith(class_prefix):
@@ -305,7 +305,7 @@ def extract_class_attributes(target_key: str, target_code: str, batch_functions:
                     and node.value.id == "self" and isinstance(node.ctx, ast.Store)):
                 known_attrs.add(node.attr)
 
-    # 3. Что читает проверяемая функция через self.x
+    # 3. Track attributes accessed by the target function via self.x
     try:
         for node in ast.walk(ast.parse(textwrap.dedent(target_code))):
             if (isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name)

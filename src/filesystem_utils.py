@@ -15,7 +15,7 @@ IGNORED_DIRS = {'.venv', '__pycache__', '.idea'}
 
 
 def iter_python_files(target_dir: str, ignored_dirs: set[str] | None = None) -> Iterator[str]:
-    ignored = ignored_dirs or set()  # protection of None
+    ignored = ignored_dirs or set()  # protect against None
     for root, dirs, files in os.walk(target_dir):
         dirs[:] = [d for d in dirs if d not in ignored]
 
@@ -65,7 +65,7 @@ def read_file_safely(file_path: str) -> str:
         except UnicodeDecodeError:
             continue
 
-    # Fallback: replace broken symbols to ?
+    # Fallback: replace broken characters with ?
     with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
         return f.read()
 

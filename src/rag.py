@@ -69,7 +69,7 @@ def process_item(client, cursor, file_path, func_name, docstring, raw_functions)
     raw_code = raw_functions.get(unique_key, "The code is not found")
 
     try:
-        # generating vector
+        # generate vector embeddings
         response = client.embeddings(
             model=VECTOR_MODEL,
             prompt=docstring
@@ -124,11 +124,11 @@ def get_project_context(client, cursor, target_key: str, target_code: str, batch
     db_context = ""
 
     for key, code in get_db_dependencies(client, cursor, target_code):
-        # 1. Жестко отсекаем старую версию ТЕКУЩЕЙ функции (невзирая на префиксы /app/data/)
+        # 1. Strictly filter out the old version of the TARGET function (ignoring /app/data/ prefixes)
         if key.endswith(target_key) or target_key.endswith(key):
             continue
 
-        # 2. Отсекаем старые версии ДРУГИХ измененных функций из этого же батча
+        # 2. Filter out old versions of OTHER modified functions from the same batch
         is_in_batch = any(key.endswith(b_key) or b_key.endswith(key) for b_key in batch_changes)
         if is_in_batch:
             continue
@@ -152,11 +152,11 @@ def normalize_code(code: str) -> str:
     """Normalize code for fair comparison"""
     if not code:
         return ""
-    # kill \r
+    # remove \r
     code = code.replace('\r\n', '\n')
-    # kill spaces
+    # remove extra spaces
     lines = [line.rstrip() for line in code.split('\n')]
-    # kill ending line breaks
+    # remove trailing line breaks
     return '\n'.join(lines).strip()
 
 def filter_modified_functions(cursor, extracted_functions: dict) -> dict:
@@ -167,7 +167,7 @@ def filter_modified_functions(cursor, extracted_functions: dict) -> dict:
     for key, new_code in extracted_functions.items():
         file_path, func_name = key.split("::", 1) if "::" in key else (key, "")
 
-        # comparing only the endings of strings
+        # compare only the string endings
         cursor.execute(
             """
             SELECT raw_code FROM code_knowledge_base
