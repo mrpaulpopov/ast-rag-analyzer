@@ -2,15 +2,15 @@
 ![CI](https://github.com/mrpaulpopov/ast-rag-analyzer/actions/workflows/ci.yml/badge.svg) [Русская версия](README.ru.md) | English version
 
 This project is an AI code reviewer designed to analyze a Python codebase. Based on a RAG architecture, the system:
-1. Extracts code structures via AST parsing (with a fallback mechanism for Python 2).
-2. Generates docstrings for each function via LLM.
-3. Encodes and stores docstring information (the meaning and purpose of the function) via embeddings in PostgreSQL. This builds a searchable knowledge base of project imports, classes, and function docstrings.
+- Extracts code structures via AST parsing (with a fallback mechanism for Python 2).
+- Generates docstrings for each function via LLM.
+- Encodes and stores docstring information (the meaning and purpose of the function) via embeddings in PostgreSQL. This builds a searchable knowledge base of project imports, classes, and function docstrings.
 
 
 During inference, the pipeline collects:
-- **Related functions from the RAG database**,
-- Other functions from submitted files,
-- Variables and attributes,
+- **Related functions from the RAG database**.
+- Other functions from submitted files.
+- Variables and attributes.
 - Return statement counts.
 
 This ensures the detection of **scope errors, structural mismatches, and invalid calls**.
@@ -27,40 +27,9 @@ Finally, the assembled context is sent as a prompt to a local LLM (e.g., Qwen2.5
 
 ## Detection Examples
 
-I intentionally injected structural and logic bugs into a repository. Here are examples (red change is the original version, green change is an obviously wrong version):
+I intentionally injected structural and logic bugs into a repository to test the analyzer. Here are examples (red change is the original version, green change is the injected bug):
 
-### 1. Missing Library Method
-The AI uses its internal knowledge of Pandas to catch parameters that don't exist, which simple AST parsers or regex would miss.
-
-```diff
-  X = df.drop(columns=["isFraud", "TransactionID", "TransactionDT",
-                       "id_24", "id_25", "id_07", "id_08", "id_21",
--                      "uid1", "card1"], errors='ignore')
-+                      "uid1", "card1"], ignore_errors=True)
-
-```
-
-
-#### Response
-
-```jsonc
-{
-  "step0_diff_analysis": {
-    "code_changes": "The main change is the removal of the `errors='ignore'` parameter in the `drop` method call. It was changed from `ignore_errors=True` to `ignore_errors=True` (which is the same) and then removed entirely.",
-    "signature_and_returns_diff": "No, the number of expected arguments and the number of returned elements did not change."
-  },
-// ...
-  "step3_calls_validation": {
-    "internal_calls_match": "Yes",
-    "external_libraries_check": "The `drop` method call is invalid. The `ignore_errors` parameter does not exist in pandas' `drop` method. It should be `errors='ignore'`.",
-    "issues_found": "The `drop` method call is invalid due to the `ignore_errors` parameter."
-  },
-  "verdict_status": "FAIL",
-  "issue_description": "The `drop` method call is invalid due to the `ignore_errors` parameter. It should be `errors='ignore'`."
-}
-```
-
-### 2. Out of Scope Error
+### 1. Out of Scope Error
 The AI detects when a variable might remain unassigned if a specific condition isn't met.
 
 ```diff
@@ -91,15 +60,13 @@ client.log_param(run_id, "best_business_threshold", best_business_threshold)
     "typo_check": "None"
   },
 // ...
-  },
   "verdict_status": "FAIL",
   "issue_description": "The function does not handle the case when `good_precisions` is empty, leading to `best_business_threshold` being undefined. This could cause a runtime error."
 }
 ```
 
-### 3. Error in function signatures
-The AI can either compare the old and the new versions and find the change of the number of expected arguments,
-or it can check the related function and find the missing arguments.
+### 2. Error in Function Signatures
+The AI can either compare the old and the new versions to find a change in the expected arguments or check the related function in the RAG context to find the missing parameters.
 
 ```diff
 def lightgbm_model(train_data: lgb.Dataset, valid_data: lgb.Dataset, params: dict[str, Any]) -> lgb.Booster:
@@ -146,7 +113,7 @@ def training_lgbm(train_data: lgb.Dataset, valid_data: lgb.Dataset, lgbm_params:
 }
 ```
 
-### 4. Missing Library Method
+### 3. Missing Library Method
 The AI uses its internal knowledge of PyTorch to catch methods that don't exist, which simple AST parsers or regex would miss.
 
 ```diff
@@ -175,7 +142,7 @@ The AI uses its internal knowledge of PyTorch to catch methods that don't exist,
 }
 ```
 
-### 5. Changed number of returned elements
+### 4. Breaking Changes in Returns
 By comparing the new code with the old version, the AI catches the bug even if the caller function isn't provided in the RAG context.
 
 ```diff
@@ -191,7 +158,6 @@ By comparing the new code with the old version, the AI catches the bug even if t
     "signature_and_returns_diff": "Yes. The number of returned elements changed from 4 to 3."
   },
  // ...
-  },
   "step2_signature_and_returns_analysis": {
     "target_return_elements_count": [
       "return str(transaction[\"TransactionID\"]), is_fraud, fraud_probability"
@@ -211,15 +177,12 @@ By comparing the new code with the old version, the AI catches the bug even if t
 
 ## Limitations
 1. Manual execution: The inference pipeline currently supports only manual file selection for analysis. There's no automated Git or CI integration.
-2. Blind to business logic: If the RAG fails to find relevant context, the `[EXISTING RELATED FUNCTIONS FROM REPO]` section will be empty and an LLM query will lack context.
+2. Context dependency: If the RAG fails to find relevant context, the `[EXISTING RELATED FUNCTIONS FROM REPO]` section will be empty and an LLM query will lack context.
 3. Attention degradation: If the generated prompt consists of thousands of lines of code, a 14B model will lose the attention.
 
 ## Possible Improvements
 1. CI/CD Integration: The inference pipeline should be integrated directly into a CI pipeline to execute automatically on every commit or pull request.
 2. AI Agents: The final prompt texts can be sent to AI agents: they have a much higher Precision/Recall ratio compared to a local LLM.
-
-
-
 
 ## How to Run
 
