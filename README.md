@@ -46,13 +46,12 @@ localhost:8080
 
 #### Delete All (Database and Downloaded Models)
 ```
-docker-compose down -vtem strictly validates structure and context, not mathematical or business logic. Logic changes, such as using `>` instead of `>=`, will not be detected.
-3. RAG-dependency: if the vector se
+docker-compose down -v
 ```
 
 ## Limitations
 1. Manual execution: The inference pipeline currently supports only manual file selection for analysis. There's no automated Git or CI integration.
-2. Blind to business logic: The sysarch fails to find relevant context, the `[EXISTING RELATED FUNCTIONS FROM REPO]` section will be empty and an LLM query will lack context.
+2. Blind to business logic: If the RAG fails to find relevant context, the `[EXISTING RELATED FUNCTIONS FROM REPO]` section will be empty and an LLM query will lack context.
 4. Attention degradation: If the generated prompt consists of thousands of lines of code, a 14B model will lose the attention.
 
 ## Possible Improvements
@@ -84,27 +83,7 @@ The AI uses its internal knowledge of pandas to catch parameters that don't exis
     "code_changes": "The main change is the removal of the `errors='ignore'` parameter in the `drop` method call. It was changed from `ignore_errors=True` to `ignore_errors=True` (which is the same) and then removed entirely.",
     "signature_and_returns_diff": "No, the number of expected arguments and the number of returned elements did not change."
   },
-  "step1_scope_analysis": {
-    "variables_assigned_in_if_or_try_blocks": [
-      "engine",
-      "df_iter",
-      "df",
-      "y",
-      "transaction_ids",
-      "X"
-    ],
-    "missing_else_or_except_blocks": "No, there are no explicit `else` or `except` blocks assigning default values for those variables.",
-    "typo_check": "None"
-  },
-  "step2_signature_and_returns_analysis": {
-    "target_return_elements_count": "return X, y, transaction_ids",
-    "returns_internally_consistent": "Yes",
-    "target_expected_args_count": "1",
-    "caller_line_exact_match": "NOT FOUND",
-    "caller_unpacked_vars_count": "N_A",
-    "caller_passed_args_count": "N_A",
-    "counts_match_or_breaking_change": "N_A"
-  },
+// ...
   "step3_calls_validation": {
     "internal_calls_match": "Yes",
     "external_libraries_check": "The `drop` method call is invalid. The `ignore_errors` parameter does not exist in pandas' `drop` method. It should be `errors='ignore'`.",
@@ -145,7 +124,7 @@ client.log_param(run_id, "best_business_threshold", best_business_threshold)
     "missing_else_or_except_blocks": "Yes, there is no `else` block to handle the case when `good_precisions` is empty. This could lead to `best_business_threshold` being undefined if `good_precisions` is empty.",
     "typo_check": "None"
   },
-...
+// ...
   },
   "verdict_status": "FAIL",
   "issue_description": "The function does not handle the case when `good_precisions` is empty, leading to `best_business_threshold` being undefined. This could cause a runtime error."
@@ -216,7 +195,7 @@ def training_lgbm(train_data: lgb.Dataset, valid_data: lgb.Dataset, lgbm_params:
     "code_changes": "The main changes between the previous version and the target function code are: 1) The method `optimizer.zero_grad()` was replaced with `optimizer.clear_gradients()`, which does not exist in PyTorch. 2) The method `X_val_batch.send_to(device)` was replaced with `X_val_batch.to(device)`, which is the correct method to move tensors to a device in PyTorch.",
     "signature_and_returns_diff": "No, the number of expected arguments and the number of returned elements did not change."
   },
-  ...
+// ...
   "step3_calls_validation": {
     "internal_calls_match": "Yes",
     "external_libraries_check": "The method `send_to` does not exist in PyTorch. The correct method is `to`. The method `optimizer.clear_gradients()` does not exist in PyTorch. The correct method is `zero_grad`.",
@@ -243,14 +222,7 @@ The Insight: By comparing the new code with the old version (diff), the AI catch
     "code_changes": "The previous version of the function included a return statement with four elements: transaction ID, is_fraud, fraud_probability, and reason. The target function now returns only three elements: transaction ID, is_fraud, and fraud_probability.",
     "signature_and_returns_diff": "Yes. The number of returned elements changed from 4 to 3."
   },
-  "step1_scope_analysis": {
-    "variables_assigned_in_if_or_try_blocks": [
-      "fraud_probability",
-      "is_fraud",
-      "reason"
-    ],
-    "missing_else_or_except_blocks": "No. The variables are assigned in both `if` and `try` blocks, and there are `else` and `except` blocks that handle the fallback logic.",
-    "typo_check": "None. There are no unverified attributes or class methods to cross-reference."
+ // ...
   },
   "step2_signature_and_returns_analysis": {
     "target_return_elements_count": [
@@ -263,11 +235,7 @@ The Insight: By comparing the new code with the old version (diff), the AI catch
     "caller_passed_args_count": "N_A",
     "counts_match_or_breaking_change": "N_A. The caller line is not found, so we cannot verify the safe update."
   },
-  "step3_calls_validation": {
-    "internal_calls_match": "Yes. The arguments passed to `inference_pipeline` and `graceful_degradation` match the quoted signatures perfectly.",
-    "external_libraries_check": "None. There are no calls to external libraries in the target function.",
-    "issues_found": "None."
-  },
+// ...
   "verdict_status": "FAIL",
   "issue_description": "The number of returned elements changed from 4 to 3, which is a breaking change. The caller line is not found, so we cannot verify the safe update."
 }
