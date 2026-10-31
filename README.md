@@ -56,15 +56,15 @@ docker-compose down -v
 
 ## Possible Improvements
 1. CI/CD Integration: The inference pipeline should be integrated directly into a CI pipeline to execute automatically on every commit or pull request.
-2. AI Agents: The final prompt texts can be sent to AI agents: they have a much greater Precision/Recall ratio rather than a local LLM. Routing the final prompts to specialized AI agents rather than a single local LLM could drastically improve the Precision/Recall ratio for complex codebases.
+2. AI Agents: The final prompt texts can be sent to AI agents: they have a much greater Precision/Recall ratio rather than a local LLM.
 
 
 ## Detection Examples
 
-I intentionally injected structural and logic bugs into a repository. Here are examples (red change is the original version, green change is obviously wrong version):
+I intentionally injected structural and logic bugs into a repository. Here are examples (red change is the original version, green change is an obviously wrong version):
 
 ### 1. Missing Library Method, Out of Scope Error
-The AI uses its internal knowledge of pandas to catch parameters that don't exist, which simple AST parsers or regex would miss.
+The AI uses its internal knowledge of Pandas to catch parameters that don't exist, which simple AST parsers or regex would miss.
 
 ```diff
   X = df.drop(columns=["isFraud", "TransactionID", "TransactionDT",
@@ -95,8 +95,7 @@ The AI uses its internal knowledge of pandas to catch parameters that don't exis
 ```
 
 ### 2. Out of Scope Error
-Missing Fallback Logic (Out of Scope)
-The Insight: The AI detects when a variable might remain unassigned if a specific condition isn't met, preventing UnboundLocalError in production
+The AI detects when a variable might remain unassigned if a specific condition isn't met.
 
 ```diff
 if not good_precisions.empty:
@@ -107,6 +106,7 @@ if not good_precisions.empty:
 - else:
 -   best_business_threshold = best_f1_threshold  # fallback
 -   logger.warning("Business Target Precision is unreachable. Using best f1 threshold.")
+
 client.log_param(run_id, "best_business_threshold", best_business_threshold)
 ```
 #### Response
@@ -132,6 +132,8 @@ client.log_param(run_id, "best_business_threshold", best_business_threshold)
 ```
 
 ### 3. Error in function signatures
+The AI can either compare the old and the new versions and find the change of the number of expected arguments,
+or it can check the related function and find the missing arguments.
 
 ```diff
 def lightgbm_model(train_data: lgb.Dataset, valid_data: lgb.Dataset, params: dict[str, Any]) -> lgb.Booster:
@@ -179,6 +181,7 @@ def training_lgbm(train_data: lgb.Dataset, valid_data: lgb.Dataset, lgbm_params:
 ```
 
 ### 4. Missing Library Method
+The AI uses its internal knowledge of PyTorch to catch methods that don't exist, which simple AST parsers or regex would miss.
 
 ```diff
 - optimizer.zero_grad()
@@ -207,8 +210,7 @@ def training_lgbm(train_data: lgb.Dataset, valid_data: lgb.Dataset, lgbm_params:
 ```
 
 ### 5. Changed number of returned elements
-3. Breaking Changes in Returns (Context-Aware)
-The Insight: By comparing the new code with the old version (diff), the AI catches breaking changes even if the caller function isn't provided in the RAG context.
+By comparing the new code with the old version (diff), the AI catches breaking changes even if the caller function isn't provided in the RAG context.
 
 ```diff
 - return str(transaction["TransactionID"]), is_fraud, fraud_probability, reason
