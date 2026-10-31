@@ -13,7 +13,7 @@ During inference, the pipeline collects:
 - Variables and attributes.
 - Return statement counts.
 
-This ensures the detection of **scope errors, structural mismatches, and invalid calls**.
+This ensures the detection of scope errors, structural mismatches, and invalid calls.
 
 Finally, the assembled context is sent as a prompt to a local LLM (e.g., Qwen2.5-Coder).
 
@@ -29,43 +29,8 @@ Finally, the assembled context is sent as a prompt to a local LLM (e.g., Qwen2.5
 
 I intentionally injected structural and logic bugs into a repository to test the analyzer. Here are examples (red change is the original version, green change is the injected bug):
 
-### 1. Out of Scope Error
-The AI detects when a variable might remain unassigned if a specific condition isn't met.
+### 1. Error in Function Signatures
 
-```diff
-if not good_precisions.empty:
-    # Sort Recall in descending order and get the first (maximum) row
-    best_row = good_precisions.sort_values(by='recall', ascending=False).iloc[0]
-    best_business_threshold = best_row['threshold']
-    logger.info(f"Business Target Precision {business_target_precision} achieved at threshold: {best_business_threshold}")
-- else:
--   best_business_threshold = best_f1_threshold  # fallback
--   logger.warning("Business Target Precision is unreachable. Using best f1 threshold.")
-
-client.log_param(run_id, "best_business_threshold", best_business_threshold)
-```
-#### Response
-
-```jsonc
-{
-  "step0_diff_analysis": {
-    "code_changes": "The main change is the removal of the fallback mechanism for `best_business_threshold` when `good_precisions` is empty. The previous version used `best_f1_threshold` as a fallback, while the current version does not handle this case explicitly.",
-    "signature_and_returns_diff": "No"
-  },
-  "step1_scope_analysis": {
-    "variables_assigned_in_if_or_try_blocks": [
-      "best_business_threshold"
-    ],
-    "missing_else_or_except_blocks": "Yes, there is no `else` block to handle the case when `good_precisions` is empty. This could lead to `best_business_threshold` being undefined if `good_precisions` is empty.",
-    "typo_check": "None"
-  },
-// ...
-  "verdict_status": "FAIL",
-  "issue_description": "The function does not handle the case when `good_precisions` is empty, leading to `best_business_threshold` being undefined. This could cause a runtime error."
-}
-```
-
-### 2. Error in Function Signatures
 The AI can either compare the old and the new versions to find a change in the expected arguments or check the related function in the RAG context to find the missing parameters.
 
 ```diff
@@ -113,8 +78,46 @@ def training_lgbm(train_data: lgb.Dataset, valid_data: lgb.Dataset, lgbm_params:
 }
 ```
 
+### 2. Out of Scope Error
+
+The AI detects when a variable might remain unassigned if a specific condition isn't met.
+
+```diff
+if not good_precisions.empty:
+    # Sort Recall in descending order and get the first (maximum) row
+    best_row = good_precisions.sort_values(by='recall', ascending=False).iloc[0]
+    best_business_threshold = best_row['threshold']
+    logger.info(f"Business Target Precision {business_target_precision} achieved at threshold: {best_business_threshold}")
+- else:
+-   best_business_threshold = best_f1_threshold  # fallback
+-   logger.warning("Business Target Precision is unreachable. Using best f1 threshold.")
+
+client.log_param(run_id, "best_business_threshold", best_business_threshold)
+```
+#### Response
+
+```jsonc
+{
+  "step0_diff_analysis": {
+    "code_changes": "The main change is the removal of the fallback mechanism for `best_business_threshold` when `good_precisions` is empty. The previous version used `best_f1_threshold` as a fallback, while the current version does not handle this case explicitly.",
+    "signature_and_returns_diff": "No"
+  },
+  "step1_scope_analysis": {
+    "variables_assigned_in_if_or_try_blocks": [
+      "best_business_threshold"
+    ],
+    "missing_else_or_except_blocks": "Yes, there is no `else` block to handle the case when `good_precisions` is empty. This could lead to `best_business_threshold` being undefined if `good_precisions` is empty.",
+    "typo_check": "None"
+  },
+// ...
+  "verdict_status": "FAIL",
+  "issue_description": "The function does not handle the case when `good_precisions` is empty, leading to `best_business_threshold` being undefined. This could cause a runtime error."
+}
+```
+
 ### 3. Missing Library Method
-The AI uses its internal knowledge of PyTorch to catch methods that don't exist, which simple AST parsers or regex would miss.
+
+The AI uses its internal knowledge of PyTorch to catch methods that don't exist, which simple AST parser would miss.
 
 ```diff
 - optimizer.zero_grad()
@@ -143,6 +146,7 @@ The AI uses its internal knowledge of PyTorch to catch methods that don't exist,
 ```
 
 ### 4. Breaking Changes in Returns
+
 By comparing the new code with the old version, the AI catches the bug even if the caller function isn't provided in the RAG context.
 
 ```diff
